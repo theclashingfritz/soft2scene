@@ -1,0 +1,10 @@
+Makefile
+*.proj
+/built/
+*.vcxproj.user
+.vs
+*.log
+x64
+Win32
+Debug
+Release
