@@ -43,6 +43,8 @@ static const int TEX_PER_MAT = 1;
 
 #define dprintf(format, verbose_level, ...) if (verbose >= verbose_level) { printf(format, __VA_ARGS__); }
 
+void ProcessModel(SAA_Scene *scene, SAA_Elem *model);
+
 char *GetName(SAA_Scene *scene, SAA_Elem *element) {
     int name_len = 0;
 
@@ -171,6 +173,32 @@ SI_Error HandleNull(SAA_Scene *scene, SAA_Elem *model, char *name) {
     SAA_Boolean visible = FALSE;
     SAA_modelGetNodeVisibility(scene, model, &visible);
     dprintf("Visibility: %d\n", 1, visible);
+
+
+    // Check for children.
+    int num_children = 0;
+    SAA_Elem *children = nullptr;
+
+    SAA_modelGetNbChildren(scene, model, &num_children);
+    dprintf("Children Amount: %d\n", 1, num_children);
+
+    if (num_children) {
+        children = new SAA_Elem[num_children];
+        if (children == nullptr) {
+            printf("ERROR: Not enough memory for children.\n");
+            return SI_ERR_ALLOC_PROBLEM;
+        }
+        SAA_modelGetChildren(scene, model, num_children, children);
+        if (children != nullptr) {
+            for (int this_child = 0; this_child < num_children; this_child++) {
+                dprintf("\Processing child %d...\n", 1, this_child);
+                ProcessModel(scene, &children[this_child]);
+            }
+        }
+        delete[] children;
+    } else {
+        dprintf("Don't descend this branch!\n", 1);
+    }
 
     return error;
 }
@@ -410,6 +438,31 @@ void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
     } else {
         printf("Not enough memory for control vertices! Aborting!\n");
         exit(1);
+    }
+
+    // Check for children.
+    int num_children = 0;
+    SAA_Elem *children = nullptr;
+
+    SAA_modelGetNbChildren(scene, model, &num_children);
+    dprintf("Children Amount: %d\n", 1, num_children);
+
+    if (num_children) {
+        children = new SAA_Elem[num_children];
+        if (children == nullptr) {
+            printf("ERROR: Not enough memory for children.\n");
+            return;
+        }
+        SAA_modelGetChildren(scene, model, num_children, children);
+        if (children != nullptr) {
+            for (int this_child = 0; this_child < num_children; this_child++) {
+                dprintf("\Processing child %d...\n", 1, this_child);
+                ProcessModel(scene, &children[this_child]);
+            }
+        }
+        delete[] children;
+    } else {
+        dprintf("Don't descend this branch!\n", 1);
     }
 
     delete[] triangles;
