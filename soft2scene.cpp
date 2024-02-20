@@ -4,9 +4,13 @@
 #include <iostream>
 #include <fstream>
 #include <strstream>
+#include <sstream>
+#include <iostream>
 #include <Windows.h>
 
 #include <SAA.h>
+
+#include "Element.h"
 
 //// Global Variables ////
 
@@ -43,7 +47,7 @@ static const int TEX_PER_MAT = 1;
 
 #define dprintf(format, verbose_level, ...) if (verbose >= verbose_level) { printf(format, __VA_ARGS__); }
 
-void ProcessModel(SAA_Scene *scene, SAA_Elem *model);
+Element *ProcessModel(SAA_Scene *scene, SAA_Elem *model, Element *last_element = nullptr, Element *last_joint = nullptr);
 
 char *GetName(SAA_Scene *scene, SAA_Elem *element) {
     int name_len = 0;
@@ -87,91 +91,95 @@ char *GetFullName(SAA_Scene *scene, SAA_Elem *element) {
     return fullname;
 }
 
-SI_Error HandleNull(SAA_Scene *scene, SAA_Elem *model, char *name) {
+SI_Error HandleNill(SAA_Scene *scene, SAA_Elem *model, Element *new_element, Element *last_element = nullptr, Element *last_joint = nullptr) {
+    // Get the assigned from the Element.
+    const char *name = new_element->get_name().c_str();
+
     SAA_AlgorithmType type = SAA_ALG_STANDARD;
     SI_Error error = SAA_modelGetAlgorithm(scene, model, &type);
     if (error != SI_ERR_NONE) {
-        dprintf("Error: Couldn't get algorithm type of null!\n", 1);
-        dprintf("\tBailing on null: '%s'\n", 1, name);
+        dprintf("Error: Couldn't get algorithm type of nill!\n", 1);
+        dprintf("\tBailing on nill: '%s'\n", 1, name);
         return error;
     }
 
     switch (type) {
         case SAA_ALG_STANDARD:
-            dprintf("Null <%s> is standard.\n", 2, name);
+            dprintf("Nill <%s> is standard.\n", 2, name);
             break;
         case SAA_ALG_INV_KIN:
-            dprintf("Null <%s> has inverse kinetics.\n", 2, name);
+            dprintf("Nill <%s> has inverse kinetics.\n", 2, name);
             break;
         case SAA_ALG_DYNAMIC:
-            dprintf("Null <%s> is dynamic.\n", 2, name);
+            dprintf("Nill <%s> is dynamic.\n", 2, name);
             break;
         case SAA_ALG_INV_KIN_LEAF:
-            dprintf("Null <%s> is a inverse kinetics leaf.\n", 2, name);
+            dprintf("Nill <%s> is a inverse kinetics leaf.\n", 2, name);
             break;
         case SAA_ALG_DYNA_LEAF:
-            dprintf("Null <%s> is a dynamic leaf.\n", 2, name);
+            dprintf("Nill <%s> is a dynamic leaf.\n", 2, name);
             break;
         case SAA_ALG_GRAVITY:
-            dprintf("Null <%s> is gravity.\n", 2, name);
+            dprintf("Nill <%s> is gravity.\n", 2, name);
             break;
         case SAA_ALG_FORCE:
-            dprintf("Null <%s> is a force.\n", 2, name);
+            dprintf("Nill <%s> is a force.\n", 2, name);
             break;
         case SAA_ALG_WIND:
-            dprintf("Null <%s> has wind.\n", 2, name);
+            dprintf("Nill <%s> has wind.\n", 2, name);
             break;
         case SAA_ALG_DEF_GRAVITY:
-            dprintf("Null <%s> has definied gravity.\n", 2, name);
+            dprintf("Nill <%s> has definied gravity.\n", 2, name);
             break;
         case SAA_ALG_FAN:
-            dprintf("Null <%s> is a fan.\n", 2, name);
+            dprintf("Nill <%s> is a fan.\n", 2, name);
             break;
         case SAA_ALG_NAIL:
-            dprintf("Null <%s> is a nail.\n", 2, name);
+            dprintf("Nill <%s> is a nail.\n", 2, name);
             break;
         case SAA_ALG_DYN_MODEL:
-            dprintf("Null <%s> is a dynamic model.\n", 2, name);
+            dprintf("Nill <%s> is a dynamic model.\n", 2, name);
             break;
         case SAA_ALG_CUSTOM_ICON:
-            dprintf("Null <%s> is a custom icon.\n", 2, name);
+            dprintf("Nill <%s> is a custom icon.\n", 2, name);
             break;
         case SAA_ALG_INSTANCE:
-            dprintf("Null <%s> is a instance.\n", 2, name);
+            dprintf("Nill <%s> is a instance.\n", 2, name);
             break;
         default:
-            dprintf("Null <%s> is a unknown algorithm type: %d, Skipping!\n", 2, name, type);
+            dprintf("Nill <%s> is a unknown algorithm type: %d, Skipping!\n", 2, name, type);
             return SI_ERR_BAD_PARAM;
     }
 
-    // Get the nulls matrix.
-    float matrix[4][4] = { 0.0f };
-    SAA_modelGetMatrix(scene, model, SAA_COORDSYS_GLOBAL, matrix);
+    // Get the nills matrix.
+    Matrix4f &matrix = new_element->get_transformation_matrix();
+    SAA_modelGetMatrix(scene, model, SAA_COORDSYS_GLOBAL, matrix.mat);
 
     if (verbose >= 2) {
-        printf("Null Matrix = %f %f %f %f\n", matrix[0][0], matrix[0][1], matrix[0][2], matrix[0][3]);
-        printf("              %f %f %f %f\n", matrix[1][0], matrix[1][1], matrix[1][2], matrix[1][3]);
-        printf("              %f %f %f %f\n", matrix[2][0], matrix[2][1], matrix[2][2], matrix[2][3]);
-        printf("              %f %f %f %f\n", matrix[3][0], matrix[3][1], matrix[3][2], matrix[3][3]);
+        printf("Nill Matrix = %f %f %f %f\n", matrix.mat[0][0], matrix.mat[0][1], matrix.mat[0][2], matrix.mat[0][3]);
+        printf("              %f %f %f %f\n", matrix.mat[1][0], matrix.mat[1][1], matrix.mat[1][2], matrix.mat[1][3]);
+        printf("              %f %f %f %f\n", matrix.mat[2][0], matrix.mat[2][1], matrix.mat[2][2], matrix.mat[2][3]);
+        printf("              %f %f %f %f\n", matrix.mat[3][0], matrix.mat[3][1], matrix.mat[3][2], matrix.mat[3][3]);
     }
 
-    // FOR VERBOSE DEBUG ONLY - Get the position, rotation and scale indivdually.
+    // Get the position, rotation and scale indivdually.
+    Vector3f &pos = new_element->get_position();
+    Vector3f &rot = new_element->get_rotation();
+    Vector3f &scale = new_element->get_scale();
+
+    SAA_modelGetTranslation(scene, model, SAA_COORDSYS_LOCAL, &pos.x, &pos.y, &pos.z);
+    SAA_modelGetRotation(scene, model, SAA_COORDSYS_LOCAL, &rot.x, &rot.y, &rot.z);
+    SAA_modelGetScaling(scene, model, SAA_COORDSYS_LOCAL, &scale.x, &scale.y, &scale.z);
+
     if (verbose >= 3) {
-        float pos[3] = { 0.0f };
-        float rot[3] = { 0.0f };
-        float scale[3] = { 0.0f };
-
-        SAA_modelGetTranslation(scene, model, SAA_COORDSYS_LOCAL, &pos[0], &pos[1], &pos[2]);
-        SAA_modelGetRotation(scene, model, SAA_COORDSYS_LOCAL, &rot[0], &rot[1], &rot[2]);
-        SAA_modelGetScaling(scene, model, SAA_COORDSYS_LOCAL, &scale[0], &scale[1], &scale[2]);
-
-        printf("Null Pos = %f %f %f\n", pos[0], pos[1], pos[2]);
-        printf("Null Rot = %f %f %f\n", rot[0], rot[1], rot[2]);
-        printf("Null Scale = %f %f %f\n", scale[0], scale[1], scale[2]);
+        printf("Nill Pos = %f %f %f\n", pos.x, pos.y, pos.z);
+        printf("Nill Rot = %f %f %f\n", rot.x, rot.y, rot.z);
+        printf("Nill Scale = %f %f %f\n", scale.x, scale.y, scale.z);
     }
 
     SAA_Boolean visible = FALSE;
     SAA_modelGetNodeVisibility(scene, model, &visible);
+    new_element->set_visibility(visible != FALSE);
     dprintf("Visibility: %d\n", 1, visible);
 
 
@@ -190,9 +198,11 @@ SI_Error HandleNull(SAA_Scene *scene, SAA_Elem *model, char *name) {
         }
         SAA_modelGetChildren(scene, model, num_children, children);
         if (children != nullptr) {
+            new_element->prepare_children(num_children);
             for (int this_child = 0; this_child < num_children; this_child++) {
-                dprintf("\Processing child %d...\n", 1, this_child);
-                ProcessModel(scene, &children[this_child]);
+                dprintf("\nProcessing child %d...\n", 1, this_child);
+                Element *child = ProcessModel(scene, &children[this_child], new_element, last_joint);
+                new_element->set_child(this_child, child);
             }
         }
         delete[] children;
@@ -203,18 +213,34 @@ SI_Error HandleNull(SAA_Scene *scene, SAA_Elem *model, char *name) {
     return error;
 }
 
-void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
-    // Get the name of the element.
-    char *name = nullptr;
-    if (true) { // use_prefix
-        // Get the FULL name of the trim curve
-        name = GetFullName(scene, model);
-    } else {
-        // Get the name of the trim curve
-        name = GetName(scene, model);
+Element *ProcessModel(SAA_Scene *scene, SAA_Elem *model, Element *last_element, Element *last_joint) {
+    Element *new_element = new Element;
+
+    // Make the name assignment a local affair.
+    {
+        // Get the name of the element.
+        char *name = nullptr;
+        if (true) { // use_prefix
+            // Get the FULL name of the trim curve
+            name = GetFullName(scene, model);
+        } else {
+            // Get the name of the trim curve
+            name = GetName(scene, model);
+        }
+
+        new_element->set_name(name);
+
+        // Free the copy of the name. We no longer need it.
+        delete[] name;
     }
 
+    // Get the assigned from the Element.
+    const char *name = new_element->get_name().c_str();
+
     dprintf("Element name <%s>\n", 1, name);
+
+    // If we have a previous element, It is our parent element!
+    if (last_element != nullptr) { new_element->set_parent(last_element); }
 
     // Find out what type of node we're dealing with.
     SAA_ModelType type = SAA_MNILL;
@@ -222,9 +248,9 @@ void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
 
     switch (type) {
         case SAA_MNILL:
-            dprintf("Element <%s> is a null.\n", 2, name);
-            HandleNull(scene, model, name);
-            return;
+            dprintf("Element <%s> is a nill.\n", 2, name);
+            HandleNill(scene, model, new_element, last_element, last_joint);
+            return new_element;
         case SAA_MPTCH:
             dprintf("Element <%s> is a patch.\n", 2, name);
             break;
@@ -254,33 +280,58 @@ void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
             break;
         default:
             dprintf("Element <%s> is a unknown type: %d, Skipping!\n", 2, name, type);
-            return;
+            delete new_element;
+            return nullptr;
     }
 
     // Get the models matrix.
-    float matrix[4][4] = { 0.0f };
-    SAA_modelGetMatrix(scene, model, SAA_COORDSYS_GLOBAL, matrix);
+    Matrix4f &matrix = new_element->get_transformation_matrix();
+    SAA_modelGetMatrix(scene, model, SAA_COORDSYS_GLOBAL, matrix.mat);
 
     if (verbose >= 2) {
-        printf("Model Matrix = %f %f %f %f\n", matrix[0][0], matrix[0][1], matrix[0][2], matrix[0][3]);
-        printf("               %f %f %f %f\n", matrix[1][0], matrix[1][1], matrix[1][2], matrix[1][3]);
-        printf("               %f %f %f %f\n", matrix[2][0], matrix[2][1], matrix[2][2], matrix[2][3]);
-        printf("               %f %f %f %f\n", matrix[3][0], matrix[3][1], matrix[3][2], matrix[3][3]);
+        printf("Model Matrix = %f %f %f %f\n", matrix.mat[0][0], matrix.mat[0][1], matrix.mat[0][2], matrix.mat[0][3]);
+        printf("               %f %f %f %f\n", matrix.mat[1][0], matrix.mat[1][1], matrix.mat[1][2], matrix.mat[1][3]);
+        printf("               %f %f %f %f\n", matrix.mat[2][0], matrix.mat[2][1], matrix.mat[2][2], matrix.mat[2][3]);
+        printf("               %f %f %f %f\n", matrix.mat[3][0], matrix.mat[3][1], matrix.mat[3][2], matrix.mat[3][3]);
     }
 
-    // FOR VERBOSE DEBUG ONLY - Get the position, rotation and scale indivdually.
+    // Get the position, rotation and scale indivdually.
+    Vector3f &pos = new_element->get_position();
+    Vector3f &rot = new_element->get_rotation();
+    Vector3f &scale = new_element->get_scale();
+
+    SAA_modelGetTranslation(scene, model, SAA_COORDSYS_LOCAL, &pos.x, &pos.y, &pos.z);
+    SAA_modelGetRotation(scene, model, SAA_COORDSYS_LOCAL, &rot.x, &rot.y, &rot.z);
+    SAA_modelGetScaling(scene, model, SAA_COORDSYS_LOCAL, &scale.x, &scale.y, &scale.z);
+
     if (verbose >= 3) {
-        float pos[3] = { 0.0f };
-        float rot[3] = { 0.0f };
-        float scale[3] = { 0.0f };
+        printf("Model Pos = %f %f %f\n", pos.x, pos.y, pos.z);
+        printf("Model Rot = %f %f %f\n", rot.x, rot.y, rot.z);
+        printf("Model Scale = %f %f %f\n", scale.x, scale.y, scale.z);
+    }
 
-        SAA_modelGetTranslation(scene, model, SAA_COORDSYS_LOCAL, &pos[0], &pos[1], &pos[2]);
-        SAA_modelGetRotation(scene, model, SAA_COORDSYS_LOCAL, &rot[0], &rot[1], &rot[2]);
-        SAA_modelGetScaling(scene, model, SAA_COORDSYS_LOCAL, &scale[0], &scale[1], &scale[2]);
+    SAA_Boolean visible = FALSE;
+    SAA_modelGetNodeVisibility(scene, model, &visible);
+    new_element->set_visibility(visible != FALSE);
+    dprintf("Visibility: %d\n", 1, visible);
 
-        printf("Model Pos = %f %f %f\n", pos[0], pos[1], pos[2]);
-        printf("Model Rot = %f %f %f\n", rot[0], rot[1], rot[2]);
-        printf("Model Scale = %f %f %f\n", scale[0], scale[1], scale[2]);
+    // Only create egg polygon data if: the node is visible, and its not a
+    // NULL or a Joint, and we're outputing polys (or if we are outputing
+    // NURBS and the model is a poly mesh or a face)
+    if (!visible || (type == SAA_MNILL) || (type == SAA_MJNT)) {
+        delete new_element;
+        return nullptr;
+    }
+    if (((!make_poly && !(make_nurbs && ((type == SAA_MSMSH) || (type == SAA_MFACE)))))) {
+        delete new_element;
+        return nullptr;
+    }
+
+    // If the model is a NURBS in soft, set its step before tesselating
+    if (type == SAA_MNSRF) {
+        error = SAA_nurbsSurfaceSetStep(scene, model, nurbs_step, nurbs_step);
+    } else if (type == SAA_MPTCH) { // If the model is a PATCH in soft, set its step before tesselating
+        error = SAA_patchSetStep(scene, model, nurbs_step, nurbs_step);
     }
 
     SAA_GeomType gtype = SAA_GEOM_ORIGINAL;
@@ -299,28 +350,6 @@ void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
     //for (int i = 0; i < num_shapes; i++) {
     //}
 
-    SAA_Boolean visible = FALSE;
-    SAA_modelGetNodeVisibility(scene, model, &visible);
-    dprintf("Visibility: %d\n", 1, visible);
-
-    // Only create egg polygon data if: the node is visible, and its not a
-    // NULL or a Joint, and we're outputing polys (or if we are outputing
-    // NURBS and the model is a poly mesh or a face)
-    if (!visible || (type == SAA_MNILL) || (type == SAA_MJNT)) {
-        return; 
-    }
-    if (((!make_poly && !(make_nurbs && ((type == SAA_MSMSH) || (type == SAA_MFACE)))) ||
-         (make_poly || make_nurbs || !make_duv || ((type != SAA_MSMSH) && (type != SAA_MFACE))))) {
-        return;
-    }
-
-    // If the model is a NURBS in soft, set its step before tesselating
-    if (type == SAA_MNSRF) {
-        error = SAA_nurbsSurfaceSetStep(scene, model, nurbs_step, nurbs_step);
-    } else if (type == SAA_MPTCH) { // If the model is a PATCH in soft, set its step before tesselating
-        error = SAA_patchSetStep(scene, model, nurbs_step, nurbs_step);
-    }
-
     // Get the number of triangles
     int num_tri = 0;
     int id = 0;
@@ -330,7 +359,8 @@ void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
            printf("Error: Couldn't get number of triangles!\n");
            printf("\tBailing on model: '%s'\n", name);
         }
-        return;
+        delete new_element;
+        return nullptr;
     } else if (verbose >= 1) {
         printf("Model Triangle Count: %d\n", num_tri);
     }
@@ -451,13 +481,16 @@ void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
         children = new SAA_Elem[num_children];
         if (children == nullptr) {
             printf("ERROR: Not enough memory for children.\n");
-            return;
+            delete new_element;
+            return nullptr;
         }
         SAA_modelGetChildren(scene, model, num_children, children);
         if (children != nullptr) {
+            new_element->prepare_children(num_children);
             for (int this_child = 0; this_child < num_children; this_child++) {
-                dprintf("\Processing child %d...\n", 1, this_child);
-                ProcessModel(scene, &children[this_child]);
+                dprintf("\nProcessing child %d...\n", 1, this_child);
+                Element *child = ProcessModel(scene, &children[this_child], new_element, last_joint);
+                new_element->set_child(this_child, child);
             }
         }
         delete[] children;
@@ -470,6 +503,152 @@ void ProcessModel(SAA_Scene *scene, SAA_Elem *model) {
     delete[] num_tex_tri;
     if (textures) { delete[] textures; }
     delete[] cvertices;
+}
+
+void IndentStream(std::stringstream &ss, int indent_level) {
+    for (int indent = 0; indent < indent_level; indent++) {
+        ss << ' ';
+    }
+}
+
+void ListHierarchy(SAA_Scene *scene, SAA_Elem *model, int indent_level) {
+    // Get the name of the element.
+    char *name = nullptr;
+    if (true) { // use_prefix
+        // Get the FULL name of the trim curve
+        name = GetFullName(scene, model);
+    } else {
+        // Get the name of the trim curve
+        name = GetName(scene, model);
+    }
+
+    std::stringstream ss;
+    IndentStream(ss, indent_level);
+    ss << name << ' ';
+
+    // Free the allocated name.
+    delete[] name; 
+
+    // Find out what type of node we're dealing with.
+    SAA_ModelType type = SAA_MNILL;
+    SAA_AlgorithmType alg_type = SAA_ALG_STANDARD;
+    SI_Error error = SAA_modelGetType(scene, model, &type);
+
+    switch (type) {
+        case SAA_MNILL:
+            ss << "NILL";
+
+            alg_type = SAA_ALG_STANDARD;
+            error = SAA_modelGetAlgorithm(scene, model, &alg_type);
+            if (error != SI_ERR_NONE) {
+                dprintf("Error: Couldn't get algorithm type of nill!\n", 1);
+                dprintf("\tBailing on nill: '%s'\n", 1, name);
+                break;
+            }
+
+            ss << ' ';
+
+            switch (alg_type) {
+                case SAA_ALG_STANDARD:
+                    ss << "ALG_STANDARD";
+                    break;
+                case SAA_ALG_INV_KIN:
+                    ss << "ALG_INV_KIN";
+                    break;
+                case SAA_ALG_DYNAMIC:
+                    ss << "ALG_DYNAMIC";
+                    break;
+                case SAA_ALG_INV_KIN_LEAF:
+                    ss << "ALG_INV_KIN_LEAF";
+                    break;
+                case SAA_ALG_DYNA_LEAF:
+                    ss << "ALG_DYNA_LEAF";
+                    break;
+                case SAA_ALG_GRAVITY:
+                    ss << "ALG_GRAVITY";
+                    break;
+                case SAA_ALG_FORCE:
+                    ss << "ALG_FORCE";
+                    break;
+                case SAA_ALG_WIND:
+                    ss << "ALG_WIND";
+                    break;
+                case SAA_ALG_DEF_GRAVITY:
+                    ss << "ALG_DEF_GRAVITY";
+                    break;
+                case SAA_ALG_FAN:
+                    ss << "ALG_FAN";
+                    break;
+                case SAA_ALG_NAIL:
+                    ss << "ALG_NAIL";
+                    break;
+                case SAA_ALG_DYN_MODEL:
+                    ss << "ALG_DYN_MODE";
+                    break;
+                case SAA_ALG_CUSTOM_ICON:
+                    ss << "ALG_CUSTOM_ICON";
+                    break;
+                case SAA_ALG_INSTANCE:
+                    ss << "ALG_INSTANCE";
+                    break;
+                default:
+                    ss << "UNKNOWN";
+                    break;
+            }
+            break;
+        case SAA_MPTCH:
+            ss << "MPATCH";
+            break;
+        case SAA_MFACE:
+            ss << "MFACE";
+            break;
+        case SAA_MSMSH:
+            ss << "MSMSH";
+            break;
+        case SAA_MJNT:
+            ss << "MJNT";
+            break;
+        case SAA_MSPLN:
+            ss << "MSPLN";
+            break;
+        case SAA_MMETA:
+            ss << "MMETA";
+            break;
+        case SAA_MBALL:
+            ss << "MBALL";
+            break;
+        case SAA_MNCRV:
+            ss << "MNCRV";
+            break;
+        case SAA_MNSRF:
+            ss << "MNSRF";
+            break;
+        default:
+            ss << "UNKNWON";
+            break;
+    }
+
+    std::cout << ss.str() << std::endl;
+
+    // Check for children.
+    int num_children = 0;
+
+    SAA_modelGetNbChildren(scene, model, &num_children);
+    if (!num_children) { return; }
+
+    // Allocate the memory. 
+    SAA_Elem *children = new SAA_Elem[num_children];
+    if (children == nullptr) {
+        printf("ERROR: Not enough memory for children to list!\n");
+        return;
+    }
+    SAA_modelGetChildren(scene, model, num_children, children);
+    if (children != nullptr) {
+        for (int this_child = 0; this_child < num_children; this_child++) {
+            ListHierarchy(scene, &children[this_child], indent_level + 2);
+        }
+    }
+    delete[] children;
 }
 
 int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_name) {
@@ -526,6 +705,27 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         exit(1);
     }
 
+
+    // FOR DEBBUGING: List Hierarchy. 
+    if (verbose >= 3) {
+        printf("HIERARCHY:\n");
+
+        for (int i = 0; i < num_models; i++) {
+            int level = 0;
+
+            error = SAA_elementGetHierarchyLevel(scene, &models[i], &level);
+            if (error != SI_ERR_NONE) {
+                printf("Failed to get hierarchy level for model in scene %s with error: %d\n", scene_name, error);
+                exit(1);
+            }
+
+            // If the model isn't root level, Skip the model. 
+            if (level > 0) { continue; }
+
+            ListHierarchy(scene, &models[i], 0);
+        };
+    }
+
     // Process all of the models.
     for (int i = 0; i < num_models; i++) {
         int level = 0;
@@ -543,7 +743,7 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
             printf("\nProcessing scene model[%d]\n", i);
         }
 
-        ProcessModel(scene, &models[i]);
+        ProcessModel(scene, &models[i], nullptr, nullptr);
     }
 
     // Free the array of models.
