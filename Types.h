@@ -8,14 +8,17 @@ struct Matrix4f {
 };
 
 struct Vector3f {
-	float x;
-	float y;
-	float z;
+	float x, y, z;
+};
+
+struct Vector3d {
+	double x, y, z;
 };
 
 struct Vector4f {
-	float x;
-	float y;
-	float z;
-	float w;
+	float x, y, z, w;
+};
+
+struct Vector4d {
+	double x, y, z, w;
 };

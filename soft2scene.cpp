@@ -91,6 +91,38 @@ char *GetFullName(SAA_Scene *scene, SAA_Elem *element) {
     return fullname;
 }
 
+int *MakeIndexMap(int *indices, int num_indices, int map_size) {
+    int i, j;
+
+    // Allocate map array
+    int *map = new int[map_size];
+
+    if (map != NULL) {
+        for (i = 0; i < map_size; i++) {
+            j = 0;
+            int found = 0;
+            while (j < num_indices) {
+                if (indices[j] == i) {
+                    map[i] = j;
+                    dprintf("map[%d] = %d\n", 2, i, map[i]);
+                    found = 1;
+                    break;
+                }
+                j++;
+            }
+            if (!found) {
+                dprintf("WARNING: Orphan vertex (%d)\n", 2, i);
+                // default to -1 for now
+                map[i] = -1;
+            }
+        }
+    } else {
+        printf("Not enough memory for index map...\n");
+    }
+
+    return map;
+}
+
 SI_Error HandleNill(SAA_Scene *scene, SAA_Elem *model, Element *new_element, Element *last_element = nullptr, Element *last_joint = nullptr) {
     // Get the assigned from the Element.
     const char *name = new_element->get_name().c_str();
@@ -322,7 +354,7 @@ Element *ProcessModel(SAA_Scene *scene, SAA_Elem *model, Element *last_element, 
         delete new_element;
         return nullptr;
     }
-    if (((!make_poly && !(make_nurbs && ((type == SAA_MSMSH) || (type == SAA_MFACE)))))) {
+    if ((!make_poly && !make_nurbs) || (type != SAA_MSMSH && type != SAA_MFACE)) {
         delete new_element;
         return nullptr;
     }
@@ -364,6 +396,8 @@ Element *ProcessModel(SAA_Scene *scene, SAA_Elem *model, Element *last_element, 
     } else if (verbose >= 1) {
         printf("Model Triangle Count: %d\n", num_tri);
     }
+
+    new_element->model_info.set_triangle_count(num_tri);
 
     // Check also to see if the surface is a skeleton.
     SAA_Boolean is_skeleton = FALSE;
@@ -451,23 +485,81 @@ Element *ProcessModel(SAA_Scene *scene, SAA_Elem *model, Element *last_element, 
 
     // Allocate array of control vertices
     SAA_SubElem *cvertices = new SAA_SubElem[num_tri * 3];
+    new_element->model_info.prepare_control_vertices(num_tri * 3);
+    Vector4d *cvert_pos = new_element->model_info.get_control_vertices();
     if (cvertices != nullptr) {
         // Read each triangles control vertices into the array.
         SAA_triangleGetCtrlVertices(scene, model, gtype, id, num_tri, triangles, cvertices);
+        SAA_ctrlVertexGetPositions(scene, model, num_tri * 3, cvertices, (SAA_DVector*)cvert_pos);
 
         if (verbose >= 2) {
-            SAA_DVector *cvertPos = new SAA_DVector[num_tri * 3];
-            SAA_ctrlVertexGetPositions(scene, model, num_tri * 3, cvertices, cvertPos);
-
             for (int i = 0; i < num_tri * 3; i++) {
-                printf("cvert[%d] = %f %f %f %f\n", i,cvertPos[i].x, cvertPos[i].y, cvertPos[i].z, cvertPos[i].w);
+                printf("cvert[%d] = %f %f %f %f\n", i, cvert_pos[i].x, cvert_pos[i].y, cvert_pos[i].z, cvert_pos[i].w);
             }
-
-            delete[] cvertPos;
         }
     } else {
         printf("Not enough memory for control vertices! Aborting!\n");
         exit(1);
+    }
+
+    // Allocate array of control vertex indices, This array maps from the
+    // redundant cvertices array into the unique vertices array
+    // (cvertices->vertices)
+    new_element->model_info.prepare_indicies(num_tri * 3);
+    int *indices = new_element->model_info.get_indicies();
+    if (indices != nullptr) {
+        SAA_ctrlVertexGetIndices(scene, model, num_tri * 3, cvertices, indices);
+
+        if (verbose >= 2) {
+            for (int i = 0; i < num_tri * 3; i++) {
+                printf("indices[%d] = %d\n", i, indices[i]);
+            }
+        }
+    } else {
+        printf("Not enough memory for indices! Aborting!\n");
+        exit(1);
+    }
+
+    // Get the number of UNIQUE vertices in model.
+    int num_vert = 0;
+    SAA_modelGetNbTriVertices(scene, model, &num_vert);
+
+    dprintf("Amount of unique verts = %d\n", 2, num_vert);
+
+    // Allocate array of vertices.
+    new_element->model_info.prepare_vertices(num_vert);
+    Vector4d *vertices = new_element->model_info.get_vertices();
+
+    // get the UNIQUE vertices of all triangles in model
+    SAA_modelGetTriVertices(scene, model, num_vert, (SAA_DVector *)vertices);
+
+    if (verbose >= 2) {
+        for (int i = 0; i < num_vert; i++) {
+            printf("vertices[%d] = %f ", i, vertices[i].x);
+            printf("%f %f %f\n", vertices[i].y, vertices[i].z, vertices[i].w);
+        }
+    }
+
+    // Allocate a index map array, We contruct this array to map from the
+    // unique vertices array to the redundant cvertices array - it will
+    // save us from doing repetitive searches later.
+    int *index_map = MakeIndexMap(indices, num_tri * 3, num_vert);
+
+    // Allocate array of normals
+    new_element->model_info.prepare_normals(num_tri * 3);
+    Vector4d *normals = new_element->model_info.get_normals();
+    if (normals != NULL) {
+        // read each control vertex's normals into an array
+        SAA_ctrlVertexGetNormals(scene, model, num_tri * 3, cvertices, (SAA_DVector *)normals);
+    } else {
+        printf("Not enough memory for normals! Aborting!\n");
+        exit(1);
+    }
+
+    if (verbose >= 2) {
+        for (int i = 0; i < num_tri * 3; i++) {
+            printf("normals[%d] = %f %f %f %f\n", i, normals[i].x, normals[i].y, normals[i].z, normals[i].w);
+        }
     }
 
     // Check for children.
@@ -503,6 +595,8 @@ Element *ProcessModel(SAA_Scene *scene, SAA_Elem *model, Element *last_element, 
     delete[] num_tex_tri;
     if (textures) { delete[] textures; }
     delete[] cvertices;
+
+    return new_element;
 }
 
 void IndentStream(std::stringstream &ss, int indent_level) {

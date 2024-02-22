@@ -5,7 +5,10 @@ Element::Element() {
 }
 
 Element::~Element() {
-
+	if (children) {
+		delete[] children;
+		children = nullptr;
+	}
 }
 
 void Element::set_parent(Element *new_parent) {
@@ -106,4 +109,126 @@ Element *Element::get_child(uint32_t index) {
 
 uint32_t Element::get_children_amount() {
 	return children_count;
+}
+
+
+// Model Info
+
+ModelInfo::ModelInfo() {
+
+}
+
+ModelInfo::~ModelInfo() {
+	if (control_vertices) {
+		delete[] control_vertices;
+		control_vertices = nullptr;
+	}
+	if (indices) {
+		delete[] indices;
+		indices = nullptr;
+	}
+	if (vertices) {
+		delete[] vertices;
+		vertices = nullptr;
+	}
+	if (normals) {
+		delete[] normals;
+		normals = nullptr;
+	}
+}
+
+void ModelInfo::set_triangle_count(uint32_t new_triangle_count) {
+	triangle_count = new_triangle_count;
+}
+
+uint32_t ModelInfo::get_triangle_count() {
+	return triangle_count;
+}
+
+void ModelInfo::prepare_control_vertices(uint32_t new_vertices_count) {
+	// If we already HAVE control vertices. Then release the buffer.
+	if (control_vertices) {
+		delete[] control_vertices;
+		control_vertices = nullptr;
+	}
+
+	control_vertices_count = new_vertices_count;
+
+	// Allocate a buffer which can hold all of the pointers to our indices.
+	control_vertices = new Vector4d[control_vertices_count];
+	memset(control_vertices, 0.0, sizeof(Vector4d) * control_vertices_count);
+}
+
+Vector4d* ModelInfo::get_control_vertices() {
+	return control_vertices;
+}
+
+uint32_t ModelInfo::get_control_verticies_count() {
+	return control_vertices_count;
+}
+
+void ModelInfo::prepare_indicies(uint32_t new_indicies_count) {
+	// If we already HAVE indicies. Then release the buffer.
+	if (indices) {
+		delete[] indices;
+		indices = nullptr;
+	}
+
+	indicies_count = new_indicies_count;
+
+	// Allocate a buffer which can hold all of the pointers to our indices.
+	indices = new int[indicies_count];
+	memset(indices, 0, sizeof(int32_t) * indicies_count);
+}
+
+int32_t * ModelInfo::get_indicies() {
+	return indices;
+}
+
+uint32_t ModelInfo::get_indicies_count() {
+	return indicies_count;
+}
+
+void ModelInfo::prepare_vertices(uint32_t new_vertices_count) {
+	// If we already HAVE vertices. Then release the buffer.
+	if (vertices) {
+		delete[] vertices;
+		vertices = nullptr;
+	}
+
+	vertices_count = new_vertices_count;
+
+	// Allocate a buffer which can hold all of the pointers to our vertices.
+	vertices = new Vector4d[vertices_count];
+	memset(vertices, 0, sizeof(Vector4d) * vertices_count);
+}
+
+Vector4d * ModelInfo::get_vertices() {
+	return vertices;
+}
+
+uint32_t ModelInfo::get_vertices_count() {
+	return vertices_count;
+}
+
+void ModelInfo::prepare_normals(uint32_t new_normals_count) {
+	// If we already HAVE normals. Then release the buffer.
+	if (normals) {
+		delete[] normals;
+		normals = nullptr;
+	}
+
+	normals_count = new_normals_count;
+
+	// Allocate a buffer which can hold all of the pointers to our normals.
+	normals = new Vector4d[normals_count];
+	memset(normals, 0, sizeof(Vector4d) * normals_count);
+}
+
+Vector4d* ModelInfo::get_normals() {
+	return normals;
+}
+
+uint32_t ModelInfo::get_normals_count() {
+	return normals_count;
 }
