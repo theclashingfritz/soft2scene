@@ -2,14 +2,15 @@
 #include <stdint.h>
 #include <string>
 
+#include "BinaryFile.h"
 #include "Types.h"
 
 class Element;
 
-class ModelInfo {
+class MeshInfo {
 	public:
-		ModelInfo();
-		~ModelInfo();
+		MeshInfo();
+		~MeshInfo();
 
 		void set_triangle_count(uint32_t new_triangle_count);
 		uint32_t get_triangle_count();
@@ -29,6 +30,25 @@ class ModelInfo {
 		void prepare_normals(uint32_t new_normals_count);
 		Vector4d *get_normals();
 		uint32_t get_normals_count();
+
+		void prepare_uvs_and_textures(uint32_t new_texture_count, uint32_t tri_count);
+
+		int32_t &get_u_repeat();
+		int32_t &get_v_repeat();
+
+		float *get_u_coords();
+		float *get_v_coords();
+
+		float *get_u_scale();
+		float *get_v_scale();
+
+		float *get_u_offset();
+		float *get_v_offset();
+
+		void set_texture_name(uint32_t index, const char *name);
+		char **get_texture_names();
+
+		void write(BinaryFile &file);
 
 	private:
 		// Total amount of triangles. 
@@ -55,13 +75,23 @@ class ModelInfo {
 		// UVs
 		int32_t u_repeat = 0;
 		int32_t v_repeat = 0;
+
 		float *u_coords = nullptr;
 		float *v_coords = nullptr;
-		float *u_scale = nullptr;
-		float *v_scale = nullptr;
-		float *u_offset = nullptr;
-		float *v_offset = nullptr;
+		uint32_t uv_coords_count = 0;
+
+		float *u_scales = nullptr;
+		float *v_scales = nullptr;
+		uint32_t uv_scales_count = 0;
+
+		float *u_offsets = nullptr;
+		float *v_offsets = nullptr;
+		uint32_t uv_offsets_count = 0;
+
+		uint32_t texture_count = 0;
+
 		char **texture_names = nullptr;
+		uint32_t texture_names_count = 0;
 };
 
 // This class is a replacement for the root in Softimage which is Model for some reason.
@@ -98,9 +128,27 @@ class Element {
 		Element *get_child(uint32_t index);
 		uint32_t get_children_amount();
 
-	public:
 		// Model Info
-		ModelInfo model_info;
+		MeshInfo *mesh_info = nullptr;
+
+		// Write/Read
+		enum InfoTypes {
+			Mesh = 1 << 0,
+		};
+
+		void set_flags(uint64_t nflags);
+		uint64_t get_flags();
+
+		void set_array_position(size_t index);
+		size_t get_array_position();
+
+		void set_parent_position(size_t index);
+		size_t get_parent_position();
+
+		void prepare_children_indexes();
+		size_t *get_children_indexes();
+
+		void write(BinaryFile &file);
 
 	private:
 		// Element Parent, Above us in the hierarchy.
@@ -124,4 +172,18 @@ class Element {
 
 		// Visibility (Visible by default)
 		bool visibility = true;
+
+		// Write/Read Info
+		// Used for resolving children and parents of Element array.
+
+		uint64_t flags = 0;
+
+		// Used to resolve position in Element array. 
+		size_t array_index = 0;
+
+		// Position of parent in Element array.
+		size_t parent_index = 0;
+
+		// Array of indexes to all of our children.
+		size_t *children_indexes = nullptr;
 };

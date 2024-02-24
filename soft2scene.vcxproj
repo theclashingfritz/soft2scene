@@ -159,10 +159,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BinaryFile.cpp" />
     <ClCompile Include="Element.cpp" />
     <ClCompile Include="soft2scene.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="BinaryFile.h" />
     <ClInclude Include="Element.h" />
     <ClInclude Include="Types.h" />
   </ItemGroup>

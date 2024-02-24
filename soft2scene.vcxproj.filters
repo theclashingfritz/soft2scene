@@ -21,12 +21,18 @@
     <ClCompile Include="Element.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="BinaryFile.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Element.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="Types.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="BinaryFile.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
