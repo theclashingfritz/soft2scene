@@ -13,12 +13,14 @@
 #include <SAA.h>
 
 #include "BinaryFile.h"
+#include "Constraint.h"
 #include "Element.h"
 
 //// Global Variables ////
 
 // Global tables
 static std::vector<Element *> elements;
+static std::vector<Constraint *> constraints;
 
 // Global strings.
 static char default_scene_name[] = "suitA-zero.1-0";
@@ -105,7 +107,7 @@ char *GetFullName(SAA_Scene *scene, SAA_Elem *element) {
     name[--name_len] = 0;
 
     // Construct the full name from both the prefix and name.
-    size_t fullname_len = name_len + prefix_len + 1;
+    int fullname_len = name_len + prefix_len + 1;
     char *fullname = new char[fullname_len + 1];
     strncpy_s(fullname, fullname_len, prefix, prefix_len);
     strncpy_s(fullname + prefix_len + 1, fullname_len - prefix_len, name, name_len);
@@ -173,6 +175,247 @@ int *MakeIndexMap(int *indices, int num_indices, int map_size) {
     }
 
     return map;
+}
+
+Element *SAAElemToElement(SAA_Scene *scene, SAA_Elem *model) {
+    std::string name;
+    {
+        // Get the name of the element.
+        char* namebuffer = nullptr;
+        if (true) { // use_prefix
+            // Get the FULL name of the trim curve
+            namebuffer = GetFullName(scene, model);
+        } else {
+            // Get the name of the trim curve
+            namebuffer = GetName(scene, model);
+        }
+
+        name = std::string(namebuffer);
+
+        // Free the copy of the name. We no longer need it.
+        delete[] namebuffer;
+    }
+    
+    for (size_t i = 0; i < elements.size(); i++) {
+        Element *element = elements[i];
+        std::string &element_name = element->get_name();
+        if (element_name.compare(name) == 0) { return element; }
+    }
+    
+    lprintf("ERROR: Couldn't find matching Element for SAA Element.", 0);
+    return nullptr;
+}
+
+void CreateConstraints(SAA_Scene *scene, SAA_Elem *model) {
+    Element *element = SAAElemToElement(scene, model);
+
+    void *rel_info = nullptr;
+    SAA_Elem *elements = nullptr;
+    int active_element_count = 0;
+    int passive_element_count = 0;
+    int total_element_count = 0;
+    
+    // Constrains the centers of the passive elements to the center of the active element.
+    SAA_modelRelationGetCnsPosNbElements(scene, model, 0, (const void **)&rel_info, &passive_element_count);
+    SAA_modelRelationGetCnsPosNbElements(scene, model, 1, (const void **)&rel_info, &active_element_count);
+    dprintf("Passive Pos Constraint Elements: %d\n", passive_element_count);
+    dprintf("Active Pos Constraint Elements: %d\n", active_element_count);
+    
+    // Only save a contraint if we have active elements.
+    if (active_element_count > 0) {
+        // Allocate buffer for all of the SAA Elements.
+        elements = new SAA_Elem[active_element_count + 1];
+
+        // Extract all of the active elements into the buffer.
+        SAA_modelRelationGetCnsPosElements(scene, model, rel_info, active_element_count, elements);
+
+        // Allocate our constraint.
+        Constraint *pos_constraint = new Constraint(Constraint::Type::POSITION);
+        // Set the passive element to the element we're checking for constraints on.
+        pos_constraint->set_passive_element(element);
+        // Prepare the buffer for all of the active elements.
+        pos_constraint->prepare_active_elements(active_element_count);
+        // Get the buffer to act upon.
+        Element **active_constraint_elements = pos_constraint->get_active_elements();
+
+        // Iterate all of the active elements.
+        for (int i = 0; i < active_element_count; i++) {
+            // Get the active element.
+            SAA_Elem &saa_element = elements[i];
+            // Convert from a Softimage Element to our own Element type.
+            Element *active_element = SAAElemToElement(scene, &saa_element);
+            printf("Active Pos Constraint Element <%s> for Element <%s>\n", active_element->get_name().c_str(), element->get_name().c_str());
+            // Add the active element we found to the buffer.
+            active_constraint_elements[i] = active_element;
+        }
+        constraints.push_back(pos_constraint);
+
+        delete[] elements;
+    }
+    
+    // Constrains the rotation of the passive elements to the rotation of the active element.
+    SAA_modelRelationGetCnsOriNbElements(scene, model, 0, (const void **)&rel_info, &passive_element_count);
+    SAA_modelRelationGetCnsOriNbElements(scene, model, 1, (const void **)&rel_info, &active_element_count);
+    dprintf("Passive Ori Constraint Elements: %d\n", passive_element_count);
+    dprintf("Active Ori Constraint Elements: %d\n", active_element_count);
+
+    // Only save a contraint if we have active elements.
+    if (active_element_count > 0) {
+        // Allocate buffer for all of the SAA Elements.
+        elements = new SAA_Elem[active_element_count + 1];
+
+        // Extract all of the active elements into the buffer.
+        SAA_modelRelationGetCnsOriElements(scene, model, rel_info, active_element_count, elements);
+
+        // Allocate our constraint.
+        Constraint *ori_constraint = new Constraint(Constraint::Type::ORIENTATION);
+        // Set the passive element to the element we're checking for constraints on.
+        ori_constraint->set_passive_element(element);
+        // Prepare the buffer for all of the active elements.
+        ori_constraint->prepare_active_elements(active_element_count);
+        // Get the buffer to act upon.
+        Element **active_constraint_elements = ori_constraint->get_active_elements();
+
+        // Iterate all of the active elements.
+        for (int i = 0; i < active_element_count; i++) {
+            // Get the active element
+            SAA_Elem &saa_element = elements[i];
+            // Convert from a Softimage Element to our own Element type.
+            Element *active_element = SAAElemToElement(scene, &saa_element);
+            printf("Active Ori Constraint Element <%s> for Element <%s>\n", active_element->get_name().c_str(), element->get_name().c_str());
+            // Add the active element we found to the buffer.
+            active_constraint_elements[i] = active_element;
+        }
+        constraints.push_back(ori_constraint);
+
+        delete[] elements;
+    }
+
+    // Constrains the scaling of the passive elements to the same scaling as the active element.
+    SAA_modelRelationGetCnsSclNbElements(scene, model, 0, (const void **)&rel_info, &passive_element_count);
+    SAA_modelRelationGetCnsSclNbElements(scene, model, 1, (const void **)&rel_info, &active_element_count);
+    dprintf("Passive Scl Constraint Elements: %d\n", passive_element_count);
+    dprintf("Active Scl Constraint Elements: %d\n", active_element_count);
+
+    // Only save a contraint if we have active elements.
+    if (active_element_count > 0) {
+        // Allocate buffer for all of the SAA Elements.
+        elements = new SAA_Elem[active_element_count + 1];
+
+        // Extract all of the active elements into the buffer.
+        SAA_modelRelationGetCnsSclElements(scene, model, rel_info, active_element_count, elements);
+
+        // Allocate our constraint.
+        Constraint *scl_constraint = new Constraint(Constraint::Type::SCALE);
+        // Set the passive element to the element we're checking for constraints on.
+        scl_constraint->set_passive_element(element);
+        // Prepare the buffer for all of the active elements.
+        scl_constraint->prepare_active_elements(active_element_count);
+        // Get the buffer to act upon.
+        Element **active_constraint_elements = scl_constraint->get_active_elements();
+
+        // Iterate all of the active elements.
+        for (int i = 0; i < active_element_count; i++) {
+            // Get the active element
+            SAA_Elem &saa_element = elements[i];
+            // Convert from a Softimage Element to our own Element type.
+            Element *active_element = SAAElemToElement(scene, &saa_element);
+            printf("Active Scl Constraint Element <%s> for Element <%s>\n", active_element->get_name().c_str(), element->get_name().c_str());
+            // Add the active element we found to the buffer.
+            active_constraint_elements[i] = active_element;
+        }
+        constraints.push_back(scl_constraint);
+
+        delete[] elements;
+    }
+
+    // Constrains the range of position of the passive element relative to the active element. 
+    SAA_modelRelationGetCnsPosLimNbElements(scene, model, 0, (const void **)&rel_info, &passive_element_count);
+    SAA_modelRelationGetCnsPosLimNbElements(scene, model, 1, (const void **)&rel_info, &active_element_count);
+    dprintf("Passive Pos Limit Constraint Elements: %d\n", passive_element_count);
+    dprintf("Active Pos Limit Constraint Elements: %d\n", active_element_count);
+
+    // Only save a contraint if we have a active and passive element (1)
+    if (passive_element_count == 1 && active_element_count == 1) {
+        // Allocate buffer for all of the SAA Elements.
+        elements = new SAA_Elem[active_element_count + 1];
+
+        // Extract all of the active elements into the buffer.
+        SAA_modelRelationGetCnsPosLimElements(scene, model, rel_info, active_element_count, elements);
+
+        // Allocate our constraint.
+        Constraint *pos_limit_constraint = new Constraint(Constraint::Type::POSITION_LIMIT);
+        // Set the passive element to the element we're checking for constraints on.
+        pos_limit_constraint->set_passive_element(element);
+        // Prepare the buffer for all of the active elements.
+        pos_limit_constraint->prepare_active_elements(active_element_count);
+        // Get the buffer to act upon.
+        Element **active_constraint_elements = pos_limit_constraint->get_active_elements();
+
+        // Get the active element
+        SAA_Elem &saa_element = elements[0];
+        // Convert from a Softimage Element to our own Element type.
+        Element *active_element = SAAElemToElement(scene, &saa_element);
+        printf("Active Pos Limit Constraint Element <%s> for Element <%s>\n", active_element->get_name().c_str(), element->get_name().c_str());
+        // Add the active element we found to the buffer.
+        active_constraint_elements[0] = active_element;
+
+        // Handle constraint attributes
+        PositionLimits *limits = pos_limit_constraint->get_position_limits();
+
+        // Get and store the coordinate system.
+        SAA_CoordSys system = SAA_COORDSYS_GLOBAL;
+        SAA_modelRelationGetCnsPosLimCoordSys(scene, &saa_element, model, &system);
+        limits->set_coordinate_system((CoordinateSystem)system);
+
+        // Get and store the shape type.
+        SAA_CnsPosLimType type = SAA_CNSPOSLIM_SPHERE;
+        SAA_modelRelationGetCnsPosLimType(scene, &saa_element, model, &type);
+        limits->set_shape_type((PositionLimits::ShapeType)type);
+
+        // Get and store our damping attributes.
+        float width, strength;
+        SAA_modelRelationGetCnsPosLimDamping(scene, &saa_element, model, &width, &strength);
+        limits->set_damping(width, strength);
+
+        // Get and store our radius.
+        float radius;
+        SAA_modelRelationGetCnsPosLimRadius(scene, &saa_element, model, &radius);
+        limits->set_radius(radius);
+
+        // Get and store the maximum position.
+        Vector3f &max_pos = limits->get_max_pos();
+        SAA_modelRelationGetCnsPosLimMax(scene, &saa_element, model, &max_pos.x, &max_pos.y, &max_pos.z);
+
+        // Get and store the minimum position.
+        Vector3f &min_pos = limits->get_min_pos();
+        SAA_modelRelationGetCnsPosLimMin(scene, &saa_element, model, &min_pos.x, &min_pos.y, &min_pos.z);
+
+        // Active booleans.
+        SAA_Boolean x_active = FALSE;
+        SAA_Boolean y_active = FALSE;
+        SAA_Boolean z_active = FALSE;
+
+        // Get and store the maximum position activeness.
+        SAA_modelRelationGetCnsPosLimMaxActive(scene, &saa_element, model, &x_active, &y_active, &z_active);
+        limits->set_max_pos_active(x_active != FALSE, y_active != FALSE, z_active != FALSE);
+
+        // Get and store the minimum position activeness.
+        SAA_modelRelationGetCnsPosLimMinActive(scene, &saa_element, model, &x_active, &y_active, &z_active);
+        limits->set_min_pos_active(x_active != FALSE, y_active != FALSE, z_active != FALSE);
+
+        // We're done, Add the constraint to the vector.
+        constraints.push_back(pos_limit_constraint);
+
+        // Free the allocated element space.
+        delete[] elements;
+    }
+
+    // Constrains the range of rotation of a model (which is both the passive and active element).
+    SAA_modelRelationGetCnsRotLimNbElements(scene, model, 0, (const void **)&rel_info, &passive_element_count);
+    SAA_modelRelationGetCnsRotLimNbElements(scene, model, 1, (const void **)&rel_info, &active_element_count);
+    dprintf("Passive Rot Limit Constraint Elements: %d\n", passive_element_count);
+    dprintf("Active Rot Limit Constraint Elements: %d\n", active_element_count);
 }
 
 void HandleElementChildren(SAA_Scene *scene, SAA_Elem *model, Element *new_element, Element *new_joint) {
@@ -490,7 +733,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
     SAA_modelGetNbShapes(scene, model, &num_shapes);
     lfprintf(log_file, "Amount of shapes: %d\n", 1, num_shapes);
 
-    // TODO: Process all of our shapes. 
+    // Process all of our shapes.
     //for (int i = 0; i < num_shapes; i++) {
     //}
 
@@ -679,7 +922,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
     if (num_tex_loc) {
         dprintf("DEBUG: Processing local textures (%d) for Element <%s>.\n", num_tex_loc, new_element->get_name().c_str());
         // Allocate arrays for u & v coords and texture info
-        new_element->mesh_info->prepare_uvs_and_textures(num_tex_loc, num_tri);
+        new_element->mesh_info->prepare_uvs_and_textures(num_tex_loc * num_tri * 3, num_tri, num_tri, num_tri, num_tex_loc);
 
         float *u_coords = new_element->mesh_info->get_u_coords();
         float *v_coords = new_element->mesh_info->get_v_coords();
@@ -769,7 +1012,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
             }
 
             // Allocate arrays for u & v coords and texture info
-            new_element->mesh_info->prepare_uvs_and_textures(num_tex_glb, num_tri);
+            new_element->mesh_info->prepare_uvs_and_textures(num_tex_glb * num_tri * 3, 1, 1, 1, num_tex_glb);
 
             float *u_coords = new_element->mesh_info->get_u_coords();
             float *v_coords = new_element->mesh_info->get_v_coords();
@@ -1148,14 +1391,49 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         dprintf("DEBUG: Storing processed element %s with index %d!\n", element->get_name().c_str(), elements.size());
         if (element) { elements.push_back(element); }
     }
+    
+    // Handle of these seperately from the elements.
+    // They can overlap with each other if take Elements into
+    // consideration.
+    for (int i = 0; i < num_models; i++) {
+        CreateConstraints(scene, &models[i]);
+    }
 
-    // First setup all of element indexes. This is setup for resolving
+    // First setup all of element indicies. This is setup for resolving
     // parents and children when written. 
     for (size_t i = 0; i < elements.size(); i++) {
         Element *element = elements[i];
         assert(element != nullptr);
-        element->prepare_children_indexes();
+        element->prepare_children_indicies();
         element->set_array_position(i);
+    }
+
+    // Create the arrays for element indicies in constraints.
+    for (size_t i = 0; i < constraints.size(); i++) {
+        // Get our current constraint.
+        Constraint *constraint = constraints[i];
+        assert(constraint != nullptr);
+
+        // Set the passive element array index for our constraint.
+        Element *passive_element = constraint->get_passive_element();
+        assert(passive_element != nullptr);
+        constraint->set_passive_element_index(passive_element->get_array_position());
+
+        // Prepare the array for all of the active element array indicies.
+        constraint->prepare_active_element_indicies();
+
+        // Get all of our active elements for the constraint.
+        Element **active_elements = constraint->get_active_elements();
+        assert(active_elements != nullptr);
+
+        // Get the array of active element indicies. 
+        SIZE *active_element_indicies = constraint->get_active_element_indicies();
+        assert(active_element_indicies != nullptr);
+
+        // Set the active element index from all of our active elements.
+        for (uint32_t j = 0; j < constraint->get_active_elements_count(); j++) {
+            active_element_indicies[j] = active_elements[j]->get_array_position();
+        }
     }
 
     // Setup the children positions and the parent position for all of the children.
@@ -1163,7 +1441,7 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         Element *element = elements[i];
         assert(element != nullptr);
         uint32_t children_count = element->get_children_amount();
-        size_t *chidren_indexes = element->get_children_indexes();
+        SIZE *chidren_indexes = element->get_children_indicies();
         for (uint32_t j = 0; j < children_count; j++) {
             Element *child = element->get_child(j);
             assert(child != nullptr);
@@ -1172,16 +1450,33 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         }
     }
 
-    // Write all of the elements.
+    // Open our binary file for writing.
     std::string filename(scene_name);
-    std::string file_ext(".scene");
-    filename += file_ext;
+    {
+        std::string file_ext(".siscene");
+        filename += file_ext;
+    }
     dprintf("Writing scene '%s' to file '%s'.\n", scene_name, filename.c_str());
     BinaryFile file(filename.c_str());
-    file.write(elements.size());
+
+    // Write the name of our scene.
+    file.write_uint64(strlen(scene_name));
+    file.write(scene_name);
+
+    // Write out all of our elements.
+    file.write_uint64(elements.size());
     for (size_t i = 0; i < elements.size(); i++) {
         Element *element = elements[i];
+        assert(element != nullptr);
         element->write(file);
+    }
+
+    // Write out all of our constraints.
+    file.write_uint64(constraints.size());
+    for (size_t i = 0; i < constraints.size(); i++) {
+        Constraint *constraint = constraints[i];
+        assert(constraint != nullptr);
+        constraint->write(file);
     }
 
     // Free all of our elements.
@@ -1192,6 +1487,15 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
     }
     // Clear the elements.
     elements.clear();
+
+    // Free all of our constraints.
+    for (size_t i = 0; i < constraints.size(); i++) {
+        Constraint *constraint = constraints[i];
+        constraints[i] = nullptr;
+        delete constraint;
+    }
+    // Clear the constraints.
+    constraints.clear();
 
     // Free the array of models.
     delete[] models;

@@ -16,3 +16,13 @@ BinaryFile::~BinaryFile() {
 		filestream.close();
 	}
 }
+
+CompressedBinaryFile::CompressedBinaryFile(const char *fname) : BinaryFile(fname) {
+
+}
+
+CompressedBinaryFile::~CompressedBinaryFile() {
+	if (filestream.is_open()) {
+		filestream.close();
+	}
+}

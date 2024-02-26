@@ -31,7 +31,8 @@ class MeshInfo {
 		Vector4d *get_normals();
 		uint32_t get_normals_count();
 
-		void prepare_uvs_and_textures(uint32_t new_texture_count, uint32_t tri_count);
+		void prepare_uvs_and_textures(uint32_t new_uv_coords_count, uint32_t new_uv_scales_count, uint32_t new_uv_offsets_count,
+                                      uint32_t new_texture_names_count, uint32_t new_texture_count);
 
 		int32_t &get_u_repeat();
 		int32_t &get_v_repeat();
@@ -139,14 +140,14 @@ class Element {
 		void set_flags(uint64_t nflags);
 		uint64_t get_flags();
 
-		void set_array_position(size_t index);
-		size_t get_array_position();
+		void set_array_position(SIZE index);
+		SIZE get_array_position();
 
-		void set_parent_position(size_t index);
-		size_t get_parent_position();
+		void set_parent_position(SIZE index);
+		SIZE get_parent_position();
 
-		void prepare_children_indexes();
-		size_t *get_children_indexes();
+		void prepare_children_indicies();
+		SIZE *get_children_indicies();
 
 		void write(BinaryFile &file);
 
@@ -179,11 +180,11 @@ class Element {
 		uint64_t flags = 0;
 
 		// Used to resolve position in Element array. 
-		size_t array_index = 0;
+		SIZE array_index = 0;
 
 		// Position of parent in Element array.
-		size_t parent_index = 0;
+		SIZE parent_index = 0;
 
 		// Array of indexes to all of our children.
-		size_t *children_indexes = nullptr;
+		SIZE *children_indexes = nullptr;
 };

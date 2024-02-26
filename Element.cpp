@@ -127,38 +127,38 @@ uint64_t Element::get_flags() {
 	return flags;
 }
 
-void Element::set_array_position(size_t index) {
+void Element::set_array_position(SIZE index) {
 	array_index = index;
 }
 
-size_t Element::get_array_position() {
+SIZE Element::get_array_position() {
 	return array_index;
 }
 
-void Element::set_parent_position(size_t index) {
+void Element::set_parent_position(SIZE index) {
 	parent_index = index;
 }
 
-size_t Element::get_parent_position() {
+SIZE Element::get_parent_position() {
 	return parent_index;
 }
 
-void Element::prepare_children_indexes() {
+void Element::prepare_children_indicies() {
 	if (children_indexes) {
 		delete[] children_indexes;
 		children_indexes = nullptr;
 	}
 
-	children_indexes = new size_t[children_count + 1];
-	memset(children_indexes, NULL, sizeof(size_t) * children_count);
+	children_indexes = new SIZE[children_count + 1];
+	memset(children_indexes, NULL, sizeof(SIZE) * children_count);
 }
 
-size_t *Element::get_children_indexes() {
+SIZE *Element::get_children_indicies() {
 	return children_indexes;
 }
 
 void Element::write(BinaryFile &file) {
-	file.write(name.size());
+	file.write_uint64(name.size());
 	file.write(name);
 	file.write(flags);
 	file.write(matrix);
@@ -170,7 +170,7 @@ void Element::write(BinaryFile &file) {
 	file.write(parent_index);
 	file.write(children_count);
 	for (uint32_t i = 0; i < children_count; i++) {
-		size_t child_index = children_indexes[i];
+		SIZE child_index = children_indexes[i];
 		file.write(child_index);
 	}
 	if (flags & Element::InfoTypes::Mesh) {
@@ -335,7 +335,8 @@ uint32_t MeshInfo::get_normals_count() {
 	return normals_count;
 }
 
-void MeshInfo::prepare_uvs_and_textures(uint32_t new_texture_count, uint32_t tri_count) {
+void MeshInfo::prepare_uvs_and_textures(uint32_t new_uv_coords_count, uint32_t new_uv_scales_count, uint32_t new_uv_offsets_count,
+	                                    uint32_t new_texture_names_count, uint32_t new_texture_count) {
 	// Free arrays if they're already allocated.
 	if (u_coords) {
 		delete[] u_coords;
@@ -366,24 +367,33 @@ void MeshInfo::prepare_uvs_and_textures(uint32_t new_texture_count, uint32_t tri
 		texture_names = nullptr;
 	}
 
-	// Store our texture count;
+	// Store our counts.
+	uv_coords_count = new_uv_coords_count;
+	uv_scales_count = new_uv_scales_count;
+	uv_offsets_count = new_uv_offsets_count;
+	texture_names_count = new_texture_names_count;
 	texture_count = new_texture_count;
 
 	// Allocate arrays for uv coordinates.
-	uv_coords_count = tri_count * texture_count * 3;
 	u_coords = new float[uv_coords_count + 1];
+	memset(u_coords, 0, sizeof(float) * uv_coords_count);
+
 	v_coords = new float[uv_coords_count + 1];
+	memset(v_coords, 0, sizeof(float) * uv_coords_count);
 
 	// Allocate arrays of texture info.
-	uv_scales_count = tri_count;
 	u_scales = new float[uv_scales_count + 1];
+	memset(u_scales, 0, sizeof(float) * uv_scales_count);
+
 	v_scales = new float[uv_scales_count + 1];
+	memset(v_scales, 0, sizeof(float) * uv_scales_count);
 
-	uv_offsets_count = tri_count;
 	u_offsets = new float[uv_offsets_count + 1];
-	v_offsets = new float[uv_offsets_count + 1];
+	memset(u_offsets, 0, sizeof(float) * uv_offsets_count);
 
-	texture_names_count = tri_count;
+	v_offsets = new float[uv_offsets_count + 1];
+	memset(v_offsets, 0, sizeof(float) * uv_offsets_count);
+
 	texture_names = new char *[texture_names_count + 1];
 	memset(texture_names, 0, sizeof(char *) * texture_names_count);
 }
@@ -481,7 +491,7 @@ void MeshInfo::write(BinaryFile &file) {
 	for (uint32_t i = 0; i < texture_names_count; i++) {
 		char *&texture_name = texture_names[i];
 		if (texture_name == nullptr) { continue; }
-		file.write(strlen(texture_name));
+		file.write_uint64(strlen(texture_name));
 		file.write(texture_name);
 	}
 }
