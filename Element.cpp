@@ -17,6 +17,10 @@ Element::~Element() {
 		delete mesh_info;
 		mesh_info = nullptr;
 	}
+	if (node) {
+		delete node;
+		node = nullptr;
+	}
 }
 
 void Element::set_parent(Element *new_parent) {
@@ -86,6 +90,22 @@ bool Element::get_visibility() {
 	return visibility;
 }
 
+void Element::set_as_joint(bool is_joint) {
+	joint = is_joint;
+}
+
+bool Element::is_joint() {
+	return joint;
+}
+
+void Element::prepare_joint_linklist_node() {
+	node = new JointLinkListNode;
+}
+
+JointLinkListNode *Element::get_joint_linklist_node() {
+	return node;
+}
+
 void Element::prepare_children(uint32_t amount) {
 	// If we already HAVE children. Then release the buffer.
 	if (children) { 
@@ -127,19 +147,19 @@ uint64_t Element::get_flags() {
 	return flags;
 }
 
-void Element::set_array_position(SIZE index) {
+void Element::set_array_position(int64_t index) {
 	array_index = index;
 }
 
-SIZE Element::get_array_position() {
+int64_t Element::get_array_position() {
 	return array_index;
 }
 
-void Element::set_parent_position(SIZE index) {
+void Element::set_parent_position(int64_t index) {
 	parent_index = index;
 }
 
-SIZE Element::get_parent_position() {
+int64_t Element::get_parent_position() {
 	return parent_index;
 }
 
@@ -149,11 +169,11 @@ void Element::prepare_children_indicies() {
 		children_indexes = nullptr;
 	}
 
-	children_indexes = new SIZE[children_count + 1];
-	memset(children_indexes, NULL, sizeof(SIZE) * children_count);
+	children_indexes = new int64_t[children_count + 1];
+	memset(children_indexes, NULL, sizeof(int64_t) * children_count);
 }
 
-SIZE *Element::get_children_indicies() {
+int64_t *Element::get_children_indicies() {
 	return children_indexes;
 }
 
@@ -166,6 +186,7 @@ void Element::write(BinaryFile &file) {
 	file.write(rot);
 	file.write(scale);
 	file.write(visibility);
+	file.write(joint);
 	file.write(array_index);
 	file.write(parent_index);
 	file.write(children_count);
@@ -176,6 +197,9 @@ void Element::write(BinaryFile &file) {
 	if (flags & Element::InfoTypes::Mesh) {
 		assert(mesh_info != nullptr);
 		mesh_info->write(file);
+	}
+	if (joint) {
+		node->write(file);
 	}
 }
 
@@ -211,26 +235,6 @@ MeshInfo::~MeshInfo() {
 		delete[] v_coords;
 		v_coords = nullptr;
 	}
-	if (u_scales) {
-		delete[] u_scales;
-		u_scales = nullptr;
-	}
-	if (v_scales) {
-		delete[] v_scales;
-		v_scales = nullptr;
-	}
-	if (u_offsets) {
-		delete[] u_offsets;
-		u_offsets = nullptr;
-	}
-	if (v_offsets) {
-		delete[] v_offsets;
-		v_offsets = nullptr;
-	}
-	if (texture_names) {
-		delete[] texture_names;
-		texture_names = nullptr;
-	}
 }
 
 void MeshInfo::set_triangle_count(uint32_t new_triangle_count) {
@@ -239,6 +243,14 @@ void MeshInfo::set_triangle_count(uint32_t new_triangle_count) {
 
 uint32_t MeshInfo::get_triangle_count() {
 	return triangle_count;
+}
+
+void MeshInfo::set_material_id(uint32_t id) {
+    material_id = id;
+}
+
+uint32_t MeshInfo::get_material_id() {
+    return material_id;
 }
 
 void MeshInfo::prepare_control_vertices(uint32_t new_vertices_count) {
@@ -335,8 +347,7 @@ uint32_t MeshInfo::get_normals_count() {
 	return normals_count;
 }
 
-void MeshInfo::prepare_uvs_and_textures(uint32_t new_uv_coords_count, uint32_t new_uv_scales_count, uint32_t new_uv_offsets_count,
-	                                    uint32_t new_texture_names_count, uint32_t new_texture_count) {
+void MeshInfo::prepare_uv_coords(uint32_t new_uv_coords_count) {
 	// Free arrays if they're already allocated.
 	if (u_coords) {
 		delete[] u_coords;
@@ -346,33 +357,9 @@ void MeshInfo::prepare_uvs_and_textures(uint32_t new_uv_coords_count, uint32_t n
 		delete[] v_coords;
 		v_coords = nullptr;
 	}
-	if (u_scales) {
-		delete[] u_scales;
-		u_scales = nullptr;
-	}
-	if (v_scales) {
-		delete[] v_scales;
-		v_scales = nullptr;
-	}
-	if (u_offsets) {
-		delete[] u_offsets;
-		u_offsets = nullptr;
-	}
-	if (v_offsets) {
-		delete[] v_offsets;
-		v_offsets = nullptr;
-	}
-	if (texture_names) {
-		delete[] texture_names;
-		texture_names = nullptr;
-	}
 
 	// Store our counts.
 	uv_coords_count = new_uv_coords_count;
-	uv_scales_count = new_uv_scales_count;
-	uv_offsets_count = new_uv_offsets_count;
-	texture_names_count = new_texture_names_count;
-	texture_count = new_texture_count;
 
 	// Allocate arrays for uv coordinates.
 	u_coords = new float[uv_coords_count + 1];
@@ -380,30 +367,6 @@ void MeshInfo::prepare_uvs_and_textures(uint32_t new_uv_coords_count, uint32_t n
 
 	v_coords = new float[uv_coords_count + 1];
 	memset(v_coords, 0, sizeof(float) * uv_coords_count);
-
-	// Allocate arrays of texture info.
-	u_scales = new float[uv_scales_count + 1];
-	memset(u_scales, 0, sizeof(float) * uv_scales_count);
-
-	v_scales = new float[uv_scales_count + 1];
-	memset(v_scales, 0, sizeof(float) * uv_scales_count);
-
-	u_offsets = new float[uv_offsets_count + 1];
-	memset(u_offsets, 0, sizeof(float) * uv_offsets_count);
-
-	v_offsets = new float[uv_offsets_count + 1];
-	memset(v_offsets, 0, sizeof(float) * uv_offsets_count);
-
-	texture_names = new char *[texture_names_count + 1];
-	memset(texture_names, 0, sizeof(char *) * texture_names_count);
-}
-
-int32_t &MeshInfo::get_u_repeat() {
-	return u_repeat;
-}
-
-int32_t &MeshInfo::get_v_repeat() {
-	return v_repeat;
 }
 
 float *MeshInfo::get_u_coords() {
@@ -414,35 +377,9 @@ float *MeshInfo::get_v_coords() {
 	return v_coords;
 }
 
-float *MeshInfo::get_u_scale() {
-	return u_scales;
-}
-
-float *MeshInfo::get_v_scale() {
-	return v_scales;
-}
-
-float *MeshInfo::get_u_offset() {
-	return u_offsets;
-}
-
-float *MeshInfo::get_v_offset() {
-	return v_offsets;
-}
-
-void MeshInfo::set_texture_name(uint32_t index, const char *name) {
-	// Don't allow a buffer overflow!
-	if (index >= texture_names_count) { return; }
-
-	texture_names[index] = (char *)name;
-}
-
-char **MeshInfo::get_texture_names() {
-	return texture_names;
-}
-
 void MeshInfo::write(BinaryFile &file) {
 	file.write(triangle_count);
+    file.write(material_id);
 	file.write(control_vertices_count);
 	for (uint32_t i = 0; i < control_vertices_count; i++) {
 		Vector4d &control_vertex = control_vertices[i];
@@ -463,8 +400,6 @@ void MeshInfo::write(BinaryFile &file) {
 		Vector4d &normal = normals[i];
 		file.write(normal);
 	}
-	file.write(u_repeat);
-	file.write(v_repeat);
 	file.write(uv_coords_count);
 	for (uint32_t i = 0; i < uv_coords_count; i++) {
 		float &u_coord = u_coords[i];
@@ -472,26 +407,80 @@ void MeshInfo::write(BinaryFile &file) {
 		file.write(u_coord);
 		file.write(v_coord);
 	}
-	file.write(uv_scales_count);
-	for (uint32_t i = 0; i < uv_scales_count; i++) {
-		float &u_scale = u_scales[i];
-		float &v_scale = v_scales[i];
-		file.write(u_scale);
-		file.write(v_scale);
+}
+
+
+JointLinkListNode::~JointLinkListNode() {
+	if (next) {
+		delete[] next;
+		next = nullptr;
 	}
-	file.write(uv_offsets_count);
-	for (uint32_t i = 0; i < uv_offsets_count; i++) {
-		float &u_offset = u_offsets[i];
-		float &v_offset = v_offsets[i];
-		file.write(u_offset);
-		file.write(v_offset);
+	if (next_indicies) {
+		delete[] next_indicies;
+		next_indicies = nullptr;
 	}
-	file.write(texture_count);
-	file.write(texture_names_count);
-	for (uint32_t i = 0; i < texture_names_count; i++) {
-		char *&texture_name = texture_names[i];
-		if (texture_name == nullptr) { continue; }
-		file.write_uint64(strlen(texture_name));
-		file.write(texture_name);
+}
+
+
+void JointLinkListNode::prepare_next() {
+	// Free arrays if they're already allocated.
+	if (next) {
+		delete[] next;
+		next = nullptr;
 	}
+
+	next = new Element *[next_count + 1];
+	memset(next, 0, sizeof(Element *) * next_count);
+}
+
+Element **JointLinkListNode::get_next() {
+	return next;
+}
+
+void JointLinkListNode::set_next_count(SIZE count) {
+	next_count = count;
+}
+
+SIZE JointLinkListNode::get_next_count() {
+	return next_count;
+}
+
+void JointLinkListNode::set_previous(Element *element) {
+	previous = element;
+}
+
+Element *JointLinkListNode::get_previous() {
+	return previous;
+}
+
+void JointLinkListNode::prepare_next_indicies() {
+	// Free arrays if they're already allocated.
+	if (next_indicies) {
+		delete[] next_indicies;
+		next_indicies = nullptr;
+	}
+
+	next_indicies = new int64_t[next_count + 1];
+	memset(next_indicies, 0, sizeof(int64_t) * next_count);
+}
+
+int64_t *JointLinkListNode::get_next_indicies() {
+	return next_indicies;
+}
+
+void JointLinkListNode::set_previous_index(int64_t index) {
+	previous_index = index;
+}
+
+int64_t JointLinkListNode::get_previous_index() {
+	return previous_index;
+}
+
+void JointLinkListNode::write(BinaryFile &file) {
+	file.write(next_count);
+	for (SIZE i = 0; i < next_count; i++) {
+		int64_t next_index = next_indicies[i];
+		file.write(next_index);
+	}
+	file.write(previous_index);
 }

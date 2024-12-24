@@ -15,14 +15,17 @@
 #include "BinaryFile.h"
 #include "Constraint.h"
 #include "Element.h"
+#include "Material.h"
+#include "Utilities.h"
 
 //// Global Variables ////
 
 // Global tables
 static std::vector<Element *> elements;
+static std::vector<Element *> root_joints;
 static std::vector<Constraint *> constraints;
 
-// Global strings.
+// Global strings
 static char default_scene_name[] = "suitA-zero.1-0";
 static char *scene_name = default_scene_name;
 static char *model_name = nullptr;
@@ -31,6 +34,9 @@ static char *database_name = default_database_name;
 static char default_rsrc_path[] = "D:/Softimage/SOFT3D_4.0/3D/rsrc";
 static char *rsrc_path = default_rsrc_path;
 static char *texture_list_filename = nullptr;
+
+// Global SAA tables
+static std::vector<Material> scene_materials;
 
 // Global SAA variables
 static SAA_Database database;
@@ -41,148 +47,26 @@ static SAA_Boolean uv_swap = FALSE;
 static bool make_poly = true;
 static bool make_nurbs = true;
 static bool make_duv = false;
+static bool use_prefix = false;
 
 // Other global variables. 
-static FILE *log_file = nullptr;
 static std::ofstream texture_list_file;
 static int pose_frame = 0;
 static int nurbs_step = 1;
 static int num_tex_loc = 0;
 static int num_tex_glb = 0;
-static int verbose = 3;
 
 // Constants
 static const int TEX_PER_MAT = 1;
 
-#ifdef _DEBUG
-  #define dprintf(format, ...) printf(format, __VA_ARGS__);
-#else
-  #define dprintf(format, ...)
-#endif
-
-#define lprintf(format, verbose_level, ...) if (verbose >= verbose_level) { printf(format, __VA_ARGS__); }
-#define lfprintf(file, format, verbose_level, ...) if (verbose >= verbose_level) { fprintf(file, format, __VA_ARGS__); }
-
 Element *ProcessElement(SAA_Scene *scene, SAA_Elem *model, Element *last_element = nullptr, Element *last_joint = nullptr);
-
-
-void safe_exit(int code) {
-    // Close the log for debugging.
-    if (log_file) {
-        fflush(log_file);
-        fclose(log_file);
-        log_file = nullptr;
-    }
-
-    exit(code);
-}
-
-char *GetName(SAA_Scene *scene, SAA_Elem *element) {
-    int name_len = 0;
-
-    // Get the name
-    SAA_elementGetNameLength(scene, element, &name_len);
-    char* name = new char[++name_len];
-    SAA_elementGetName(scene, element, name_len, name);
-    name[--name_len] = 0;
-
-    return name;
-}
-
-char *GetFullName(SAA_Scene *scene, SAA_Elem *element) {
-    int prefix_len = 0;
-
-    // Get the prefix
-    SAA_elementGetPrefixLength(scene, element, &prefix_len);
-    char* prefix = new char[++prefix_len];
-    SAA_elementGetPrefix(scene, element, prefix_len, prefix);
-    prefix[--prefix_len] = 0;
-
-    int name_len = 0;
-
-    // Get the name
-    SAA_elementGetNameLength(scene, element, &name_len);
-    char *name = new char[++name_len];
-    SAA_elementGetName(scene, element, name_len, name);
-    name[--name_len] = 0;
-
-    // Construct the full name from both the prefix and name.
-    int fullname_len = name_len + prefix_len + 1;
-    char *fullname = new char[fullname_len + 1];
-    strncpy_s(fullname, fullname_len, prefix, prefix_len);
-    strncpy_s(fullname + prefix_len + 1, fullname_len - prefix_len, name, name_len);
-    fullname[prefix_len] = '-';
-
-    delete[] name;
-    delete[] prefix;
-
-    return fullname;
-}
-
-/**
-  * Given a string, return a copy of the string without the leading file path.
-  */
-char *GetTextureName(SAA_Scene *scene, SAA_Elem *texture) {
-    char *filename = NULL;
-    int filename_len = 0;
-
-    // Get the textures name.
-    SAA_texture2DGetPicNameLength(scene, texture, &filename_len);
-
-    if (filename_len) {
-        filename = new char[++filename_len];
-        memset(filename, 0, filename_len);
-        SAA_texture2DGetPicName(scene, texture, filename_len, filename);
-    }
-
-    // make sure we are not being passed a NULL image, an empty image string or
-    // the default image created by egg2soft
-    if ((filename != nullptr) && strlen(filename) && (strstr(filename, "noIcon") == nullptr)) {
-        return filename;
-    } else {
-        fprintf(log_file, "Warning: GetTextureName received NULL filename\n");
-        return nullptr;
-    }
-}
-
-int *MakeIndexMap(int *indices, int num_indices, int map_size) {
-    int i, j;
-
-    // Allocate map array
-    int *map = new int[map_size];
-
-    if (map != NULL) {
-        for (i = 0; i < map_size; i++) {
-            j = 0;
-            int found = 0;
-            while (j < num_indices) {
-                if (indices[j] == i) {
-                    map[i] = j;
-                    lfprintf(log_file, "map[%d] = %d\n", 2, i, map[i]);
-                    found = 1;
-                    break;
-                }
-                j++;
-            }
-            if (!found) {
-                lfprintf(log_file, "WARNING: Orphan vertex (%d)\n", 2, i);
-                // default to -1 for now
-                map[i] = -1;
-            }
-        }
-    } else {
-        fprintf(log_file, "Not enough memory for index map...\n");
-    }
-
-    return map;
-}
 
 Element *SAAElemToElement(SAA_Scene *scene, SAA_Elem *model) {
     std::string name;
     {
         // Get the name of the element.
-        char* namebuffer = nullptr;
-        if (true) { // use_prefix
+        char *namebuffer = nullptr;
+        if (use_prefix) {
             // Get the FULL name of the trim curve
             namebuffer = GetFullName(scene, model);
         } else {
@@ -237,6 +121,12 @@ void CreateConstraints(SAA_Scene *scene, SAA_Elem *model) {
         pos_constraint->prepare_active_elements(active_element_count);
         // Get the buffer to act upon.
         Element **active_constraint_elements = pos_constraint->get_active_elements();
+        
+        // Get if the constraint is active or inactive.
+        SAA_Boolean active = FALSE;
+        SAA_modelRelationGetCnsPosActive(scene, model, model, &active);
+        // Set the activity of the constraint.
+        pos_constraint->set_active(active == TRUE);
 
         // Iterate all of the active elements.
         for (int i = 0; i < active_element_count; i++) {
@@ -275,6 +165,12 @@ void CreateConstraints(SAA_Scene *scene, SAA_Elem *model) {
         ori_constraint->prepare_active_elements(active_element_count);
         // Get the buffer to act upon.
         Element **active_constraint_elements = ori_constraint->get_active_elements();
+        
+        // Get if the constraint is active or inactive.
+        SAA_Boolean active = FALSE;
+        SAA_modelRelationGetCnsOriActive(scene, model, model, &active);
+        // Set the activity of the constraint.
+        ori_constraint->set_active(active == TRUE);
 
         // Iterate all of the active elements.
         for (int i = 0; i < active_element_count; i++) {
@@ -313,6 +209,12 @@ void CreateConstraints(SAA_Scene *scene, SAA_Elem *model) {
         scl_constraint->prepare_active_elements(active_element_count);
         // Get the buffer to act upon.
         Element **active_constraint_elements = scl_constraint->get_active_elements();
+        
+        // Get if the constraint is active or inactive.
+        SAA_Boolean active = FALSE;
+        SAA_modelRelationGetCnsSclActive(scene, model, model, &active);
+        // Set the activity of the constraint.
+        scl_constraint->set_active(active == TRUE);
 
         // Iterate all of the active elements.
         for (int i = 0; i < active_element_count; i++) {
@@ -359,6 +261,12 @@ void CreateConstraints(SAA_Scene *scene, SAA_Elem *model) {
         printf("Active Pos Limit Constraint Element <%s> for Element <%s>\n", active_element->get_name().c_str(), element->get_name().c_str());
         // Add the active element we found to the buffer.
         active_constraint_elements[0] = active_element;
+        
+        // Get if the constraint is active or inactive.
+        SAA_Boolean active = FALSE;
+        SAA_modelRelationGetCnsPosLimActive(scene, model, model, &active);
+        // Set the activity of the constraint.
+        pos_limit_constraint->set_active(active == TRUE);
 
         // Handle constraint attributes
         PositionLimits *limits = pos_limit_constraint->get_position_limits();
@@ -411,11 +319,50 @@ void CreateConstraints(SAA_Scene *scene, SAA_Elem *model) {
         delete[] elements;
     }
 
-    // Constrains the range of rotation of a model (which is both the passive and active element).
-    SAA_modelRelationGetCnsRotLimNbElements(scene, model, 0, (const void **)&rel_info, &passive_element_count);
-    SAA_modelRelationGetCnsRotLimNbElements(scene, model, 1, (const void **)&rel_info, &active_element_count);
-    dprintf("Passive Rot Limit Constraint Elements: %d\n", passive_element_count);
-    dprintf("Active Rot Limit Constraint Elements: %d\n", active_element_count);
+    // Constrains the up (y-axis) direction of the passive element.
+    SAA_modelRelationGetCnsUpVctNbElements(scene, model, 0, (const void **)&rel_info, &passive_element_count);
+    SAA_modelRelationGetCnsUpVctNbElements(scene, model, 1, (const void **)&rel_info, &active_element_count);
+    dprintf("Passive Up-Vct Constraint Elements: %d\n", passive_element_count);
+    dprintf("Active Up-Vct Constraint Elements: %d\n", active_element_count);
+    
+    // Only save a contraint if we have active elements.
+    if (active_element_count > 0) {
+        // Allocate buffer for all of the SAA Elements.
+        elements = new SAA_Elem[active_element_count + 1];
+        
+        // Extract all of the active elements into the buffer.
+        SAA_modelRelationGetCnsUpVctElements(scene, model, rel_info, active_element_count, elements);
+        
+        // Allocate our constraint.
+        Constraint *up_vct_constraint = new Constraint(Constraint::Type::UP_VCT);
+        // Set the passive element to the element we're checking for constraints on.
+        up_vct_constraint->set_passive_element(element);
+        // Prepare the buffer for all of the active elements.
+        up_vct_constraint->prepare_active_elements(active_element_count);
+        // Get the buffer to act upon.
+        Element **active_constraint_elements = up_vct_constraint->get_active_elements();
+        
+        // Get if the constraint is active or inactive.
+        SAA_Boolean active = FALSE;
+        SAA_modelRelationGetCnsUpVctActive(scene, model, model, &active);
+        // Set the activity of the constraint.
+        up_vct_constraint->set_active(active == TRUE);
+        
+        // Iterate all of the active elements.
+        for (int i = 0; i < active_element_count; i++) {
+            // Get the active element
+            SAA_Elem &saa_element = elements[i];
+            // Convert from a Softimage Element to our own Element type.
+            Element *active_element = SAAElemToElement(scene, &saa_element);
+            printf("Active Up-Vct Constraint Element <%s> for Element <%s>\n", active_element->get_name().c_str(), element->get_name().c_str());
+            // Add the active element we found to the buffer.
+            active_constraint_elements[i] = active_element;
+        }
+        constraints.push_back(up_vct_constraint);
+        
+        // Free the allocated element space.
+        delete[] elements;
+    }
 }
 
 void HandleElementChildren(SAA_Scene *scene, SAA_Elem *model, Element *new_element, Element *new_joint) {
@@ -466,7 +413,7 @@ Element *HandleStandardElement(SAA_Scene *scene, SAA_Elem *model, Element *last_
     {
         // Get the name of the element.
         char *name = nullptr;
-        if (true) { // use_prefix
+        if (use_prefix) {
             // Get the FULL name of the trim curve
             name = GetFullName(scene, model);
         } else {
@@ -522,7 +469,6 @@ Element *HandleStandardElement(SAA_Scene *scene, SAA_Elem *model, Element *last_
     HandleElementChildren(scene, model, new_element, last_joint);
 
     return new_element;
-
 }
 
 Element *HandleNill(SAA_Scene *scene, SAA_Elem *model, Element *last_element = nullptr, Element *last_joint = nullptr) {
@@ -533,8 +479,8 @@ Element *HandleNill(SAA_Scene *scene, SAA_Elem *model, Element *last_element = n
     // Make the name assignment a local affair.
     {
         // Get the name of the element.
-        char* name = nullptr;
-        if (true) { // use_prefix
+        char *name = nullptr;
+        if (use_prefix) {
             // Get the FULL name of the trim curve
             name = GetFullName(scene, model);
         } else {
@@ -645,12 +591,141 @@ Element *HandleNill(SAA_Scene *scene, SAA_Elem *model, Element *last_element = n
     new_element->set_visibility(visible != FALSE);
     lfprintf(log_file, "Visibility: %d\n", 1, visible);
 
+    SAA_Boolean is_skeleton = FALSE;
+    SAA_modelIsSkeleton(scene, model, &is_skeleton);
+
+    // Check to see if this surface is used as a skeleton.
+    if (is_skeleton) {
+        lfprintf(log_file, "Animating nill as joint!!!\n", 1);
+
+        // We're a joint!
+        new_element->set_as_joint(true);
+
+        // Make sure we set the last node as our previous.
+        new_element->prepare_joint_linklist_node();
+        JointLinkListNode *node = new_element->get_joint_linklist_node();
+        node->set_previous(last_joint);
+
+        // Make sure we increment the amount of next nodes in the previous joint.
+        if (last_joint) {
+            JointLinkListNode *prev_node = last_joint->get_joint_linklist_node();
+            prev_node->set_next_count(prev_node->get_next_count() + 1);
+        } else {
+            root_joints.push_back(new_element);
+        }
+
+        // We are now the new previous joint!
+        last_joint = new_element;
+    }
+
     HandleElementChildren(scene, model, new_element, last_joint);
 
     return new_element;
 }
 
+Material InitializeMaterial(SAA_Scene *scene, SAA_Elem *saa_material) {
+    char *material_name = GetName(scene, saa_material);
+
+    // Create the material for our scene materials.
+    Material new_material(material_name);
+    delete[] material_name;
+
+    SAA_ShadingModelType shade_model = SAA_SHM_CONSTANT;
+    SI_Error error = SAA_materialGetShadingModel(scene, saa_material, &shade_model);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get shading model for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_shade_model((Material::ShadingModel)shade_model);
+
+    SAA_DiffuseSrcType diffuse_type = SAA_MAT_DIFFUSE_SRC_MAT;
+    error = SAA_materialGetDiffuseSrc(scene, saa_material, &diffuse_type);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get diffuse source for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_diffuse_source((Material::ComponentSource)diffuse_type);
+
+    SAA_TransparencySrcType transparency_type = SAA_MAT_TRANSPARENCY_SRC_MAT;
+    error = SAA_materialGetTransparencySrc(scene, saa_material, &transparency_type);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get transparency source for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_transparency_source((Material::ComponentSource)transparency_type);
+
+    SAA_Boolean static_blur = FALSE;
+    error = SAA_materialGetStaticBlur(scene, saa_material, &static_blur);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get if static blur is enabled for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_static_blur(static_blur != FALSE);
+
+    Vector3f &ambieance = new_material.get_ambieance();
+    error = SAA_materialGetAmbient(scene, saa_material, &ambieance.x, &ambieance.y, &ambieance.z);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get ambieance for material %s!\n", new_material.get_name().c_str());
+    }
+
+    Vector3f &diffuse = new_material.get_diffuse();
+    error = SAA_materialGetDiffuse(scene, saa_material, &diffuse.x, &diffuse.y, &diffuse.z);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get diffuse for material %s!\n", new_material.get_name().c_str());
+    }
+
+    Vector3f &specular = new_material.get_specular();
+    error = SAA_materialGetSpecular(scene, saa_material, &specular.x, &specular.y, &specular.z);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get specular for material %s!\n", new_material.get_name().c_str());
+    }
+
+    float specular_decay = 0.0f;
+    error = SAA_materialGetSpecularDecay(scene, saa_material, &specular_decay);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get specular decay for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_specular_decay(specular_decay);
+
+    float reflection = 0.0f;
+    error = SAA_materialGetReflection(scene, saa_material, &reflection);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get reflection for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_reflection(reflection);
+
+    float refractive_index = 0.0f;
+    error = SAA_materialGetRefractiveIndex(scene, saa_material, &refractive_index);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get refractive index for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_refractive_index(refractive_index);
+
+    float transparency = 0.0f;
+    error = SAA_materialGetTransparency(scene, saa_material, &transparency);
+    if (error != SI_ERR_NONE) {
+        printf("ERROR: Failed to get transparency for material %s!\n", new_material.get_name().c_str());
+    }
+    new_material.set_transparency(transparency);
+
+    if (static_blur != FALSE) {
+        float blur_decay = 0.0f;
+        error = SAA_materialGetBlurDecay(scene, saa_material, &blur_decay);
+        if (error != SI_ERR_NONE) {
+            printf("ERROR: Failed to get blur decay for material %s!\n", new_material.get_name().c_str());
+        }
+        new_material.set_blur_decay(blur_decay);
+
+        float blur_width = 0.0f;
+        error = SAA_materialGetBlurWidth(scene, saa_material, &blur_width);
+        if (error != SI_ERR_NONE) {
+            printf("ERROR: Failed to get blur width for material %s!\n", new_material.get_name().c_str());
+        }
+        new_material.set_blur_width(blur_width);
+    }
+    
+    return new_material;
+}
+
 Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = nullptr, Element* last_joint = nullptr) {
+    void *rel_info = nullptr;
+
     SI_Error error;
 
     // Allocate and initalize the Element.
@@ -667,8 +742,8 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
     // Make the name assignment a local affair.
     {
         // Get the name of the element.
-        char* name = nullptr;
-        if (true) { // use_prefix
+        char *name = nullptr;
+        if (use_prefix) {
             // Get the FULL name of the trim curve
             name = GetFullName(scene, model);
         } else {
@@ -754,28 +829,13 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
 
     new_element->mesh_info->set_triangle_count(num_tri);
 
-    // Check also to see if the surface is a skeleton.
-    SAA_Boolean is_skeleton = FALSE;
-    SAA_modelIsSkeleton(scene, model, &is_skeleton);
-
-    // check to see if this surface is used as a skeleton or is animated via
-    // constraint only ( these nodes are tagged by the animator with the
-    // keyword "joint" somewhere in the nodes name)
-    if (is_skeleton || (strstr(name, "joint") != NULL)) {
-        if (verbose >= 1) {
-            fprintf(log_file, "Animating polys as joint!!!\n");
-        }
-
-        //MakeJoint(scene, lastJoint, lastAnim, model, name);
-    }
-
     // Model is not a null and has no triangles!
     if (!num_tri && verbose >= 1) {
         fprintf(log_file, "No triangles!\n");
     }
 
     // Allocate array of triangles and copy them all into it.
-    SAA_SubElem* triangles = new SAA_SubElem[num_tri];
+    SAA_SubElem *triangles = new SAA_SubElem[num_tri];
     if (triangles != nullptr) {
         // Triangulate model and read the triangles into array.
         SAA_modelGetTriangles(scene, model, gtype, id, num_tri, triangles);
@@ -785,7 +845,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
     }
 
     // Allocate array of materials for each triangle and copy them all into it.
-    SAA_Elem* materials = new SAA_Elem[num_tri];
+    SAA_Elem *materials = new SAA_Elem[num_tri];
     if (materials != nullptr) {
         // Read each triangle's material into array.
         SAA_triangleGetMaterials(scene, model, num_tri, triangles, materials);
@@ -793,38 +853,109 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
         fprintf(log_file, "Not enough memory for materials! Aborting!\n");
         safe_exit(1);
     }
+    
+    // Remove as many duplicate materials as possible. We'll then 
+    // remove duplicates from the vector.
+    size_t num_materials = num_tri;
+    size_t *materials_index_map = RemoveDuplicates(scene, materials, num_materials);
 
-    // Allocate array of textures per triangle.
-    int* num_tex_tri = new int[num_tri];
+    // Find out how many local textures per material.
+    for (size_t i = 0; i < num_materials; i++) {
+        int num_active_textures = 0;
+        int num_passive_textures = 0;
 
-    // Find out how many local textures per triangle.
-    void* rel_info = nullptr;
-    for (int i = 0; i < num_tri; i++) {
-        error = SAA_materialRelationGetT2DLocNbElements(scene, &materials[i], FALSE, (const void**)&rel_info, &num_tex_tri[i]);
-        // polytex
+        error = SAA_materialRelationGetT2DLocNbElements(scene, &materials[i], TRUE, (const void **)&rel_info, &num_active_textures);
+        error = SAA_materialRelationGetT2DLocNbElements(scene, &materials[i], FALSE, (const void **)&rel_info, &num_passive_textures);
         if (error == SI_ERR_NONE) {
-            num_tex_loc += num_tex_tri[i];
+            num_tex_loc += num_passive_textures;
         }
     }
+    
+    lfprintf(log_file, "num_tex_loc = %d\n", 1, num_tex_loc);
 
     // Get local textures if present
-    SAA_Elem* textures = nullptr;
+    SAA_Elem *textures = nullptr;
     if (num_tex_loc) {
-        // ASSUME only one texture per material
-        textures = new SAA_Elem[num_tri];
-
-        for (int i = 0; i < num_tri; i++) {
-            // and read all referenced local textures into array
-            SAA_materialRelationGetT2DLocElements(scene, &materials[i], TEX_PER_MAT, &textures[i]);
+        // Add all of the materials to the global list,
+        // If already present, Don't add it again.
+        for (size_t i = 0; i < num_materials; i++) {
+            SAA_Elem &saa_material = materials[i];
+            scene_materials.push_back(InitializeMaterial(scene, &saa_material));
         }
+    
+        // ASSUME only one texture per material.
+        // This behavior might be incorrect but it can be fixed later.
+        textures = new SAA_Elem[num_materials];
 
-        if (verbose >= 1) {
-            fprintf(log_file, "num_tex_loc = %d\n", num_tex_loc);
+        SAA_Boolean valid;
+        for (size_t i = 0; i < num_materials; i++) {
+            // Read all referenced local textures into array.
+            SAA_materialRelationGetT2DLocElements(scene, &materials[i], TEX_PER_MAT, &textures[i]);
+            
+            // Check to see if texture is present
+            SAA_elementIsValid(scene, &textures[i], &valid);
+            if (!valid) { continue; }
+            
+            Material &material = scene_materials[i];
+            lprintf("Material %d: %s\n", 1, i, material.get_name().c_str());
+            
+            material.set_texture_count(1);
+            Texture *matTextures = material.prepare_textures();
+            Texture &matTexture = matTextures[0];
+            
+            const char *filepath = GetTextureFilepath(scene, &textures[0]);
+            if (filepath) {
+                matTexture.set_filepath(std::string(filepath));
+                //delete[] filepath;
+            } else {
+                printf("ERROR: Couldn't get filepath for texture in Material %s\n", material.get_name().c_str());
+                matTexture.set_filepath("MISSING");
+            }
+            
+            // Get arays of texture info.
+            int32_t u_repeat;
+            int32_t v_repeat;
+            float u_scale;
+            float v_scale;
+            float u_offset;
+            float v_offset;
+            float transparency;
+            
+            SAA_Boolean uv_wrap = FALSE;
+
+            SAA_texture2DGetUScale(scene, &textures[i], &u_scale);
+            SAA_texture2DGetVScale(scene, &textures[i], &v_scale);
+            SAA_texture2DGetUOffset(scene, &textures[i], &u_offset);
+            SAA_texture2DGetVOffset(scene, &textures[i], &v_offset);
+            SAA_texture2DGetRepeats(scene, &textures[i], &u_repeat, &v_repeat);
+            SAA_texture2DGetTransparency(scene, &textures[i], &transparency );
+            SAA_texture2DGetUVSwap(scene, &textures[i], &uv_swap);
+            SAA_texture2DGetUVWrapping(scene, &textures[i], &uv_wrap);
+            
+            matTexture.set_u_scale(u_scale);
+            matTexture.set_v_scale(v_scale);
+            matTexture.set_u_offset(u_offset);
+            matTexture.set_v_offset(v_offset);
+            matTexture.set_u_repeat(u_repeat);
+            matTexture.set_v_repeat(v_repeat);
+            matTexture.set_transparency(transparency);
+            matTexture.set_uv_swap(uv_swap == TRUE);
+            matTexture.set_uv_wrap(uv_wrap == TRUE);
+            
+            new_element->mesh_info->set_material_id(i);
+
+            if (verbose >= 1) {
+                fprintf(log_file, " Local Texture: %s\n", matTexture.get_filepath().c_str());
+                fprintf(log_file, " uScale: %f vScale: %f\n", u_scale, v_scale);
+                fprintf(log_file, " uOffset: %f vOffset: %f\n", u_offset, v_offset);
+                fprintf(log_file, " uRepeat = %d, vRepeat = %d\n", u_repeat, v_repeat);
+                fprintf(log_file, " uvSwap = %d, uvWrap = %d\n", uv_swap, uv_wrap);
+            }
         }
     }
     // If no local textures, Try to get global textures.
     else {
-        SAA_modelRelationGetT2DGlbNbElements(scene, model, FALSE, (const void**)&rel_info, &num_tex_glb);
+        SAA_modelRelationGetT2DGlbNbElements(scene, model, FALSE, (const void **)&rel_info, &num_tex_glb);
 
         if (num_tex_glb) {
             // ASSUME only one texture per model
@@ -836,11 +967,86 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
             if (verbose >= 1) {
                 fprintf(log_file, "num_tex_glb = %d\n", num_tex_glb);
             }
+            
+            // Check to see if texture is present
+            SAA_Boolean valid;
+            SAA_elementIsValid(scene, &textures[0], &valid);
+            
+            // texture present - get the name and uv info
+            if (valid) {
+                SAA_Elem scene_material;
+                SAA_modelRelationGetMatCurrent(scene, model, &scene_material);
+                
+                Material material = InitializeMaterial(scene, &scene_material);
+                const char *textureName = GetTextureName(scene, &textures[0]);
+                if (textureName) {
+                    material.set_name(textureName);
+                    delete[] textureName;
+                } else {
+                    material.set_name("NO NAME");
+                }
+                
+                material.set_texture_count(1);
+                Texture *matTextures = material.prepare_textures();
+                Texture &matTexture = matTextures[0];
+                
+                const char *filepath = GetTextureFilepath(scene, &textures[0]);
+                if (filepath) {
+                    matTexture.set_filepath(std::string(filepath));
+                    delete[] filepath;
+                } else {
+                    printf("ERROR: Couldn't get filepath for texture in Material %s\n", material.get_name().c_str());
+                    matTexture.set_filepath("MISSING");
+                }
+
+                //lfprintf(log_file, " global tex named: %s\n", 1, texture_names[0]);
+
+                // Get arays of texture info.
+                int32_t u_repeat;
+                int32_t v_repeat;
+                float u_scale;
+                float v_scale;
+                float u_offset;
+                float v_offset;
+                float transparency;
+                
+                SAA_Boolean uv_wrap = FALSE;
+
+                SAA_texture2DGetUScale(scene, &textures[0], &u_scale);
+                SAA_texture2DGetVScale(scene, &textures[0], &v_scale);
+                SAA_texture2DGetUOffset(scene, &textures[0], &u_offset);
+                SAA_texture2DGetVOffset(scene, &textures[0], &v_offset);
+                SAA_texture2DGetRepeats(scene, &textures[0], &u_repeat, &v_repeat);
+                SAA_texture2DGetTransparency(scene, &textures[0], &transparency );
+                SAA_texture2DGetUVSwap(scene, &textures[0], &uv_swap);
+                SAA_texture2DGetUVWrapping(scene, &textures[0], &uv_wrap);
+                
+                matTexture.set_u_scale(u_scale);
+                matTexture.set_v_scale(v_scale);
+                matTexture.set_u_offset(u_offset);
+                matTexture.set_v_offset(v_offset);
+                matTexture.set_u_repeat(u_repeat);
+                matTexture.set_v_repeat(v_repeat);
+                matTexture.set_transparency(transparency);
+                matTexture.set_uv_swap(uv_swap == TRUE);
+                matTexture.set_uv_wrap(uv_wrap == TRUE);
+                
+                new_element->mesh_info->set_material_id(scene_materials.size());
+                scene_materials.push_back(material);
+
+                if (verbose >= 1) {
+                    fprintf(log_file, " Global Texture: %s\n", matTexture.get_filepath().c_str());
+                    fprintf(log_file, " uScale: %f vScale: %f\n", u_scale, v_scale);
+                    fprintf(log_file, " uOffset: %f vOffset: %f\n", u_offset, v_offset);
+                    fprintf(log_file, " uRepeat = %d, vRepeat = %d\n", u_repeat, v_repeat);
+                    fprintf(log_file, " uvSwap = %d, uvWrap = %d\n", uv_swap, uv_wrap);
+                }
+            }
         }
     }
 
     // Allocate array of control vertices
-    SAA_SubElem* cvertices = new SAA_SubElem[num_tri * 3];
+    SAA_SubElem *cvertices = new SAA_SubElem[num_tri * 3];
     new_element->mesh_info->prepare_control_vertices(num_tri * 3);
     Vector4d* cvert_pos = new_element->mesh_info->get_control_vertices();
     if (cvertices != nullptr) {
@@ -862,7 +1068,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
     // redundant cvertices array into the unique vertices array
     // (cvertices->vertices)
     new_element->mesh_info->prepare_indicies(num_tri * 3);
-    int* indices = new_element->mesh_info->get_indicies();
+    int *indices = new_element->mesh_info->get_indicies();
     if (indices != nullptr) {
         SAA_ctrlVertexGetIndices(scene, model, num_tri * 3, cvertices, indices);
 
@@ -884,7 +1090,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
 
     // Allocate array of vertices.
     new_element->mesh_info->prepare_vertices(num_vert);
-    Vector4d* vertices = new_element->mesh_info->get_vertices();
+    Vector4d *vertices = new_element->mesh_info->get_vertices();
 
     // get the UNIQUE vertices of all triangles in model
     SAA_modelGetTriVertices(scene, model, num_vert, (SAA_DVector*)vertices);
@@ -899,7 +1105,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
     // Allocate a index map array, We contruct this array to map from the
     // unique vertices array to the redundant cvertices array - it will
     // save us from doing repetitive searches later.
-    int* index_map = MakeIndexMap(indices, num_tri * 3, num_vert);
+    int *index_map = MakeIndexMap(indices, num_tri * 3, num_vert);
 
     // Allocate array of normals
     new_element->mesh_info->prepare_normals(num_tri * 3);
@@ -922,7 +1128,7 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
     if (num_tex_loc) {
         dprintf("DEBUG: Processing local textures (%d) for Element <%s>.\n", num_tex_loc, new_element->get_name().c_str());
         // Allocate arrays for u & v coords and texture info
-        new_element->mesh_info->prepare_uvs_and_textures(num_tex_loc * num_tri * 3, num_tri, num_tri, num_tri, num_tex_loc);
+        new_element->mesh_info->prepare_uv_coords(num_tex_loc * num_tri * 3);
 
         float *u_coords = new_element->mesh_info->get_u_coords();
         float *v_coords = new_element->mesh_info->get_v_coords();
@@ -945,56 +1151,6 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
                 fprintf(log_file, "texcoords[%d] = ( %f , %f )\n", i, u_coords[i], v_coords[i]);
             }
         }
-
-        // Get arays of texture info.
-        int32_t &u_repeat = new_element->mesh_info->get_u_repeat();
-        int32_t &v_repeat = new_element->mesh_info->get_v_repeat();
-        float *u_scale = new_element->mesh_info->get_u_scale();
-        float *v_scale = new_element->mesh_info->get_v_scale();
-        float *u_offset = new_element->mesh_info->get_u_offset();
-        float *v_offset = new_element->mesh_info->get_v_offset();
-        char **texture_names = new_element->mesh_info->get_texture_names();
-
-        for (int i = 0; i < num_tri; i++) {
-            SAA_Boolean valid = FALSE;
-            // check to see if texture is present
-            error = SAA_elementIsValid(scene, &textures[i], &valid);
-            if (error != SI_SUCCESS) {
-                fprintf(log_file, "SAA_elementIsValid failed!!!!\n");
-            }
-
-            // texture present - Get the name and uv info.
-            if (valid) {
-                new_element->mesh_info->set_texture_name(i, GetTextureName(scene, &textures[i]));
-
-                lfprintf(log_file, " tritex[%d] named: %s\n", 2, i, texture_names[i]);
-
-                SAA_texture2DGetUVSwap(scene, &textures[i], &uv_swap);
-
-                if (verbose >= 2 && uv_swap == TRUE) {
-                    fprintf(log_file, " swapping u and v...\n");
-                }
-
-                SAA_texture2DGetUScale(scene, &textures[i], &u_scale[i]);
-                SAA_texture2DGetVScale(scene, &textures[i], &v_scale[i]);
-                SAA_texture2DGetUOffset(scene, &textures[i], &u_offset[i]);
-                SAA_texture2DGetVOffset(scene, &textures[i], &v_offset[i]);
-
-                if (verbose >= 2) {
-                    fprintf(log_file, "tritex[%d] uScale: %f vScale: %f\n", i, u_scale[i], v_scale[i]);
-                    fprintf(log_file, " uOffset: %f vOffset: %f\n", u_offset[i], v_offset[i]);
-                }
-
-                SAA_texture2DGetRepeats(scene, &textures[i], &u_repeat, &v_repeat);
-
-                lfprintf(log_file, "uRepeat = %d, vRepeat = %d\n", 2, u_repeat, v_repeat);
-            } else {
-                if (verbose >= 2) {
-                    fprintf(log_file, "Invalid texture...\n");
-                    fprintf(log_file, " tritex[%d] named: (null)\n", i);
-                }
-            }
-        }
     } else if (num_tex_glb) {
         dprintf("DEBUG: Processing global textures (%d) for Element <%s>.\n", num_tex_glb, new_element->get_name().c_str());
 
@@ -1005,14 +1161,8 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
 
         // texture present - get the name and uv info
         if (valid) {
-            SAA_texture2DGetUVSwap(scene, textures, &uv_swap);
-
-            if (verbose >= 1 && uv_swap == TRUE) {
-                fprintf(log_file, " swapping u and v...\n");
-            }
-
             // Allocate arrays for u & v coords and texture info
-            new_element->mesh_info->prepare_uvs_and_textures(num_tex_glb * num_tri * 3, 1, 1, 1, num_tex_glb);
+            new_element->mesh_info->prepare_uv_coords(num_tex_glb * num_tri * 3);
 
             float *u_coords = new_element->mesh_info->get_u_coords();
             float *v_coords = new_element->mesh_info->get_v_coords();
@@ -1035,35 +1185,6 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
                     fprintf(log_file, "texcoords[%d] = ( %f , %f )\n", i, u_coords[i], v_coords[i]);
                 }
             }
-
-            char **texture_names = new_element->mesh_info->get_texture_names();
-            new_element->mesh_info->set_texture_name(0, GetTextureName(scene, textures));
-
-            lfprintf(log_file, " global tex named: %s\n", 1, texture_names[0]);
-
-            // Get arays of texture info.
-            int32_t& u_repeat = new_element->mesh_info->get_u_repeat();
-            int32_t& v_repeat = new_element->mesh_info->get_v_repeat();
-            float* u_scale = new_element->mesh_info->get_u_scale();
-            float* v_scale = new_element->mesh_info->get_v_scale();
-            float* u_offset = new_element->mesh_info->get_u_offset();
-            float* v_offset = new_element->mesh_info->get_v_offset();
-
-            SAA_texture2DGetUScale(scene, textures, u_scale);
-            SAA_texture2DGetVScale(scene, textures, v_scale);
-            SAA_texture2DGetUOffset(scene, textures, u_offset);
-            SAA_texture2DGetVOffset(scene, textures, v_offset);
-
-            if (verbose >= 1) {
-                fprintf(log_file, " global tex uScale: %f vScale: %f\n", *u_scale, *v_scale);
-                fprintf(log_file, " uOffset: %f vOffset: %f\n", *u_offset, *v_offset);
-            }
-
-            SAA_texture2DGetRepeats(scene, textures, &u_repeat, &v_repeat);
-
-            if (verbose >= 2) {
-                fprintf(log_file, "uRepeat = %d, vRepeat = %d\n", u_repeat, v_repeat);
-            }
         } else {
             fprintf(log_file, "Invalid texture...\n");
         }
@@ -1076,11 +1197,136 @@ Element *HandleMesh(SAA_Scene* scene, SAA_Elem* model, Element* last_element = n
 
     delete[] triangles;
     delete[] materials;
-    delete[] num_tex_tri;
     if (textures) { delete[] textures; }
     delete[] cvertices;
 
     return new_element;
+}
+
+
+Element *HandleJoint(SAA_Scene *scene, SAA_Elem *model, Element *last_element = nullptr, Element *last_joint = nullptr) {
+    // We are litteraly a fucking joint. Assert if this test fails.
+    //SAA_Boolean is_skeleton = FALSE;
+    //SAA_modelIsSkeleton(scene, model, &is_skeleton);
+    //assert(is_skeleton != FALSE);
+    
+    // Allocate and pre-initalize the Element.
+    Element *new_element = new Element;
+    memset(new_element, 0, sizeof(Element));
+
+    // Make the name assignment a local affair.
+    {
+        // Get the name of the element.
+        char *name = nullptr;
+        if (use_prefix) {
+            // Get the FULL name of the trim curve
+            name = GetFullName(scene, model);
+        } else {
+            // Get the name of the trim curve
+            name = GetName(scene, model);
+        }
+
+        new_element->set_name(name);
+
+        // Free the copy of the name. We no longer need it.
+        delete[] name;
+    }
+
+    // Get the assigned from the Element.
+    const char *name = new_element->get_name().c_str();
+
+    lfprintf(log_file, "Element name <%s>\n", 1, name);
+
+    // If we have a previous element, It is our parent element!
+    if (last_element != nullptr) { new_element->set_parent(last_element); }
+
+    // Get the nills matrix.
+    Matrix4f& matrix = new_element->get_transformation_matrix();
+    SAA_modelGetMatrix(scene, model, SAA_COORDSYS_GLOBAL, matrix.mat);
+
+    if (verbose >= 2) {
+        fprintf(log_file, "Joint Matrix = %f %f %f %f\n", matrix.mat[0][0], matrix.mat[0][1], matrix.mat[0][2], matrix.mat[0][3]);
+        fprintf(log_file, "               %f %f %f %f\n", matrix.mat[1][0], matrix.mat[1][1], matrix.mat[1][2], matrix.mat[1][3]);
+        fprintf(log_file, "               %f %f %f %f\n", matrix.mat[2][0], matrix.mat[2][1], matrix.mat[2][2], matrix.mat[2][3]);
+        fprintf(log_file, "               %f %f %f %f\n", matrix.mat[3][0], matrix.mat[3][1], matrix.mat[3][2], matrix.mat[3][3]);
+    }
+
+    // Get the position, rotation and scale indivdually.
+    Vector3f& pos = new_element->get_position();
+    Vector3f& rot = new_element->get_rotation();
+    Vector3f& scale = new_element->get_scale();
+
+    SAA_modelGetTranslation(scene, model, SAA_COORDSYS_LOCAL, &pos.x, &pos.y, &pos.z);
+    SAA_modelGetRotation(scene, model, SAA_COORDSYS_LOCAL, &rot.x, &rot.y, &rot.z);
+    SAA_modelGetScaling(scene, model, SAA_COORDSYS_LOCAL, &scale.x, &scale.y, &scale.z);
+
+    if (verbose >= 3) {
+        fprintf(log_file, "Joint Pos = %f %f %f\n", pos.x, pos.y, pos.z);
+        fprintf(log_file, "Joint Rot = %f %f %f\n", rot.x, rot.y, rot.z);
+        fprintf(log_file, "Joint Scale = %f %f %f\n", scale.x, scale.y, scale.z);
+    }
+
+    SAA_Boolean visible = FALSE;
+    SAA_modelGetNodeVisibility(scene, model, &visible);
+    new_element->set_visibility(visible != FALSE);
+    lfprintf(log_file, "Visibility: %d\n", 1, visible);
+    
+    // We're a joint!
+    new_element->set_as_joint(true);
+
+    // Make sure we set the last node as our previous.
+    new_element->prepare_joint_linklist_node();
+    JointLinkListNode *node = new_element->get_joint_linklist_node();
+    node->set_previous(last_joint);
+
+    // Make sure we increment the amount of next nodes in the previous joint.
+    if (last_joint) {
+        JointLinkListNode *prev_node = last_joint->get_joint_linklist_node();
+        prev_node->set_next_count(prev_node->get_next_count() + 1);
+    } else {
+        root_joints.push_back(new_element);
+    }
+
+    // We are now the new previous joint!
+    last_joint = new_element;
+
+    HandleElementChildren(scene, model, new_element, last_joint);
+
+    return new_element;
+}
+
+void SetupJointLinkedList(Element *element, Element *last_joint = nullptr) {
+    uint32_t children_count = element->get_children_amount();
+    JointLinkListNode *node = nullptr;
+    if (element->is_joint()) {
+        node = element->get_joint_linklist_node();
+        node->prepare_next();
+        node->prepare_next_indicies();
+
+        last_joint = element;
+    } else if (last_joint != nullptr) {
+        node = last_joint->get_joint_linklist_node();
+    }
+    assert(node != nullptr);
+
+    uint32_t j = 0;
+    for (uint32_t i = 0; i < children_count; i++) {
+        Element *child = element->get_child(i);
+        if (!child->is_joint()) { 
+            SetupJointLinkedList(child, last_joint);
+            continue;
+        }
+
+        if (j >= node->get_next_count()) { break; }
+
+        Element **next = node->get_next();
+        int64_t *next_indicies = node->get_next_indicies();
+        next[j] = child;
+        next_indicies[j] = child->get_array_position();
+
+        SetupJointLinkedList(child, last_joint);
+        ++j;
+    }
 }
 
 Element *ProcessElement(SAA_Scene *scene, SAA_Elem *model, Element *last_element, Element *last_joint) {
@@ -1107,7 +1353,7 @@ Element *ProcessElement(SAA_Scene *scene, SAA_Elem *model, Element *last_element
             lfprintf(log_file, "Element <%s> is a mesh.\n", 2, element->get_name().c_str());
             break;
         case SAA_MJNT:
-            element = HandleStandardElement(scene, model, last_element, last_joint);
+            element = HandleJoint(scene, model, last_element, last_joint);
             lfprintf(log_file, "Element <%s> is a joint.\n", 2, element->get_name().c_str());
             break;
         case SAA_MSPLN:
@@ -1157,7 +1403,7 @@ void ListHierarchy(SAA_Scene *scene, SAA_Elem *model, int indent_level) {
     {
         // Get the name of the element.
         char *name_buff = nullptr;
-        if (true) { // use_prefix
+        if (use_prefix) {
             // Get the FULL name of the trim curve
             name_buff = GetFullName(scene, model);
         } else {
@@ -1441,13 +1687,20 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         Element *element = elements[i];
         assert(element != nullptr);
         uint32_t children_count = element->get_children_amount();
-        SIZE *chidren_indexes = element->get_children_indicies();
+        int64_t *chidren_indexes = element->get_children_indicies();
         for (uint32_t j = 0; j < children_count; j++) {
             Element *child = element->get_child(j);
             assert(child != nullptr);
             child->set_parent_position(element->get_array_position());
             chidren_indexes[j] = child->get_array_position();
         }
+    }
+
+    // Setup the linked lists of our joint elements.
+    for (size_t i = 0; i < root_joints.size(); i++) {
+        Element *root_joint = root_joints[i];
+        assert(root_joint != nullptr);
+        SetupJointLinkedList(root_joint);
     }
 
     // Open our binary file for writing.
@@ -1457,7 +1710,7 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         filename += file_ext;
     }
     dprintf("Writing scene '%s' to file '%s'.\n", scene_name, filename.c_str());
-    BinaryFile file(filename.c_str());
+    CompressedBinaryFile file(filename.c_str());
 
     // Write the name of our scene.
     file.write_uint64(strlen(scene_name));
@@ -1478,6 +1731,13 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         assert(constraint != nullptr);
         constraint->write(file);
     }
+    
+    // Write out all of our materials.
+    file.write_uint64(scene_materials.size());
+    for (size_t i = 0; i < scene_materials.size(); i++) {
+        Material &material = scene_materials[i];
+        material.write(file);
+    }
 
     // Free all of our elements.
     for (size_t i = 0; i < elements.size(); i++) {
@@ -1496,6 +1756,9 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
     }
     // Clear the constraints.
     constraints.clear();
+    
+    // Clear all of our scene materials.
+    scene_materials.clear();
 
     // Free the array of models.
     delete[] models;

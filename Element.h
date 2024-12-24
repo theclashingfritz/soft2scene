@@ -14,6 +14,9 @@ class MeshInfo {
 
 		void set_triangle_count(uint32_t new_triangle_count);
 		uint32_t get_triangle_count();
+        
+        void set_material_id(uint32_t id);
+        uint32_t get_material_id();
 
 		void prepare_control_vertices(uint32_t new_vertices_count);
 		Vector4d *get_control_vertices();
@@ -31,29 +34,19 @@ class MeshInfo {
 		Vector4d *get_normals();
 		uint32_t get_normals_count();
 
-		void prepare_uvs_and_textures(uint32_t new_uv_coords_count, uint32_t new_uv_scales_count, uint32_t new_uv_offsets_count,
-                                      uint32_t new_texture_names_count, uint32_t new_texture_count);
-
-		int32_t &get_u_repeat();
-		int32_t &get_v_repeat();
+		void prepare_uv_coords(uint32_t new_uv_coords_count);
 
 		float *get_u_coords();
 		float *get_v_coords();
-
-		float *get_u_scale();
-		float *get_v_scale();
-
-		float *get_u_offset();
-		float *get_v_offset();
-
-		void set_texture_name(uint32_t index, const char *name);
-		char **get_texture_names();
 
 		void write(BinaryFile &file);
 
 	private:
 		// Total amount of triangles. 
 		uint32_t triangle_count = 0;
+        
+        // Index of our Material in the global array.
+        uint32_t material_id = 0;
 
 		// Control Verticies
 		Vector4d *control_vertices = nullptr;
@@ -73,26 +66,43 @@ class MeshInfo {
 		Vector4d *normals = nullptr;
 		uint32_t normals_count = 0;
 
-		// UVs
-		int32_t u_repeat = 0;
-		int32_t v_repeat = 0;
-
+        // UV Coords
 		float *u_coords = nullptr;
 		float *v_coords = nullptr;
 		uint32_t uv_coords_count = 0;
+};
 
-		float *u_scales = nullptr;
-		float *v_scales = nullptr;
-		uint32_t uv_scales_count = 0;
+class JointLinkListNode {
+	public:
+		JointLinkListNode() {};
+		~JointLinkListNode();
 
-		float *u_offsets = nullptr;
-		float *v_offsets = nullptr;
-		uint32_t uv_offsets_count = 0;
+		void prepare_next();
+		Element **get_next();
 
-		uint32_t texture_count = 0;
+		void set_next_count(SIZE count);
+		SIZE get_next_count();
 
-		char **texture_names = nullptr;
-		uint32_t texture_names_count = 0;
+		void set_previous(Element *element);
+		Element *get_previous();
+
+		void prepare_next_indicies();
+		int64_t *get_next_indicies();
+
+		void set_previous_index(int64_t index);
+		int64_t get_previous_index();
+
+		void write(BinaryFile &file);
+
+	private:
+		Element **next = nullptr;
+		SIZE next_count = 0;
+
+		Element *previous = nullptr;
+
+		// Read/Write
+		int64_t *next_indicies = nullptr;
+		int64_t previous_index = -1;
 };
 
 // This class is a replacement for the root in Softimage which is Model for some reason.
@@ -124,6 +134,12 @@ class Element {
 		void set_visibility(bool new_visibility);
 		bool get_visibility();
 
+		void set_as_joint(bool is_joint);
+		bool is_joint();
+
+		void prepare_joint_linklist_node();
+		JointLinkListNode *get_joint_linklist_node();
+
 		void prepare_children(uint32_t amount);
 		void set_child(uint32_t index, Element* child);
 		Element *get_child(uint32_t index);
@@ -140,14 +156,14 @@ class Element {
 		void set_flags(uint64_t nflags);
 		uint64_t get_flags();
 
-		void set_array_position(SIZE index);
-		SIZE get_array_position();
+		void set_array_position(int64_t index);
+		int64_t get_array_position();
 
-		void set_parent_position(SIZE index);
-		SIZE get_parent_position();
+		void set_parent_position(int64_t index);
+		int64_t get_parent_position();
 
 		void prepare_children_indicies();
-		SIZE *get_children_indicies();
+		int64_t *get_children_indicies();
 
 		void write(BinaryFile &file);
 
@@ -174,17 +190,23 @@ class Element {
 		// Visibility (Visible by default)
 		bool visibility = true;
 
+		// If our Element is infact a joint!
+		bool joint = false;
+
+		// Our joint link list node, We only have this if we are infact a joint.
+		JointLinkListNode *node = nullptr;
+
 		// Write/Read Info
 		// Used for resolving children and parents of Element array.
 
 		uint64_t flags = 0;
 
 		// Used to resolve position in Element array. 
-		SIZE array_index = 0;
+		int64_t array_index = 0;
 
 		// Position of parent in Element array.
-		SIZE parent_index = 0;
+		int64_t parent_index = 0;
 
 		// Array of indexes to all of our children.
-		SIZE *children_indexes = nullptr;
+		int64_t *children_indexes = nullptr;
 };

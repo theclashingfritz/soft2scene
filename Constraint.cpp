@@ -35,6 +35,14 @@ Constraint::Type Constraint::get_type() {
 	return type;
 }
 
+void Constraint::set_active(bool is_active) {
+    active = is_active;
+}
+
+bool Constraint::get_active() {
+    return active;
+}
+
 void Constraint::set_passive_element(Element *element) {
 	assert(element != nullptr);
 	passive_element = element;
@@ -100,6 +108,7 @@ PositionLimits *Constraint::get_position_limits() {
 
 void Constraint::write(BinaryFile &file) {
 	file.write(type);
+    file.write(active);
 	file.write(passive_element_index);
 	file.write(active_elements_count);
 	assert(active_element_indicies != nullptr);

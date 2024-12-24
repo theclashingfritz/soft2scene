@@ -16,6 +16,7 @@ class Constraint {
 			SCALE,
 			POSITION_LIMIT,
 			ROTATION_LIMIT,
+            UP_VCT,
 		};
 
 	public:
@@ -23,6 +24,9 @@ class Constraint {
 		~Constraint();
 
 		Type get_type();
+        
+        void set_active(bool is_active);
+        bool get_active();
 
 		void set_passive_element(Element *element);
 		Element *get_passive_element();
@@ -47,6 +51,9 @@ class Constraint {
 	private:
 		// The type of constraint this is, INVALID means there is no valid type set.
 		Type type = INVALID;
+        
+        // If the constraint is activated.
+        bool active = true;
 
 		// The 'passive' element, This is the target of the constraint and what the constraints, well constrain.
 		Element *passive_element = nullptr;

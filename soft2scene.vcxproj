@@ -75,8 +75,8 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
-    <IncludePath>D:\Softimage\SDK_4.0\SAAPHIRE\h;C:\Program Files\Microsoft SDKs\Windows\v7.1\include;$(IncludePath)</IncludePath>
-    <LibraryPath>D:\Softimage\SDK_4.0\SAAPHIRE\dso;C:\Program Files\Microsoft SDKs\Windows\v7.1\Lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>D:\Softimage\SDK_4.0\SAAPHIRE\h;C:\Program Files\Microsoft SDKs\Windows\v7.1\include;D:\Softimage\SoftTools\soft2scene\zlib\include;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\Softimage\SDK_4.0\SAAPHIRE\dso;C:\Program Files\Microsoft SDKs\Windows\v7.1\Lib;D:\Softimage\SoftTools\soft2scene\zlib\lib\Debug;$(LibraryPath)</LibraryPath>
     <CopyLocalProjectReference>false</CopyLocalProjectReference>
     <CopyLocalDebugSymbols>false</CopyLocalDebugSymbols>
     <CopyLocalDeploymentContent>true</CopyLocalDeploymentContent>
@@ -85,8 +85,8 @@
     <TargetName>lib$(ProjectName)</TargetName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
-    <IncludePath>D:\Softimage\SDK_4.0\SAAPHIRE\h;C:\Program Files\Microsoft SDKs\Windows\v7.1\include;$(IncludePath)</IncludePath>
-    <LibraryPath>D:\Softimage\SDK_4.0\SAAPHIRE\dso;C:\Program Files\Microsoft SDKs\Windows\v7.1\Lib;$(LibraryPath)</LibraryPath>
+    <IncludePath>D:\Softimage\SDK_4.0\SAAPHIRE\h;C:\Program Files\Microsoft SDKs\Windows\v7.1\include;D:\Softimage\SoftTools\soft2scene\zlib\include;$(IncludePath)</IncludePath>
+    <LibraryPath>D:\Softimage\SDK_4.0\SAAPHIRE\dso;C:\Program Files\Microsoft SDKs\Windows\v7.1\Lib;D:\Softimage\SoftTools\soft2scene\zlib\lib\Release;$(LibraryPath)</LibraryPath>
     <CopyLocalProjectReference>false</CopyLocalProjectReference>
     <CopyLocalDebugSymbols>false</CopyLocalDebugSymbols>
     <CopyLocalDeploymentContent>true</CopyLocalDeploymentContent>
@@ -106,7 +106,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SAA.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SAA.lib;zlibstaticd.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateMapFile>true</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
@@ -126,7 +126,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>SAA.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>SAA.lib;zlibstatic.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateMapFile>true</GenerateMapFile>
     </Link>
   </ItemDefinitionGroup>
@@ -162,13 +162,19 @@
     <ClCompile Include="BinaryFile.cpp" />
     <ClCompile Include="Constraint.cpp" />
     <ClCompile Include="Element.cpp" />
+    <ClCompile Include="Material.cpp" />
     <ClCompile Include="soft2scene.cpp" />
+    <ClCompile Include="Texture.cpp" />
+    <ClCompile Include="Utilities.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="BinaryFile.h" />
     <ClInclude Include="Constraint.h" />
     <ClInclude Include="Element.h" />
+    <ClInclude Include="Material.h" />
+    <ClInclude Include="Texture.h" />
     <ClInclude Include="Types.h" />
+    <ClInclude Include="Utilities.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

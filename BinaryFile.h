@@ -5,14 +5,21 @@
 #include <assert.h>
 #include <stdint.h>
 
+#include <istream>
 #include <ostream>
 #include <fstream>
+#include <sstream>
 #include <cstring>
 #include <string>
 
+class BinaryFile;
+class CompressedBinaryFile;
 
 class BinaryFile {
+    friend class CompressedBinaryFile;
+
     public:
+        BinaryFile();
         BinaryFile(const char *fname);
         virtual ~BinaryFile();
 
@@ -69,11 +76,17 @@ class BinaryFile {
         }
 
     protected:
+        // Stream we use for working on the data.
         std::fstream filestream;
+
+    private:
+        // Filepath used to opening our file stream.
+        std::string filepath;
 };
 
 class CompressedBinaryFile : public BinaryFile {
     public:
+        CompressedBinaryFile();
         CompressedBinaryFile(const char *fname);
         virtual ~CompressedBinaryFile();
         
@@ -117,6 +130,20 @@ class CompressedBinaryFile : public BinaryFile {
             cval.fval = value;
 
             return write(cval.uval);
+        }
+
+        std::ostream& write(const char *str) {
+            assert(str != nullptr);
+            return filestream.write(str, strlen(str));
+        }
+
+        std::ostream& write(char *const &str) {
+            assert(str != nullptr);
+            return filestream.write(str, strlen(str));
+        }
+
+        std::ostream& write(const std::string &str) {
+            return filestream.write(str.c_str(), str.size());
         }
 
         std::ostream &write(const Vector3f &value) {
@@ -166,8 +193,6 @@ class CompressedBinaryFile : public BinaryFile {
             }
             return *stream;
         }
-        
-        // Direct types to write compressed.
 
         virtual std::ostream &write_uint32(const uint32_t &value) {
             return write(value);
@@ -176,4 +201,6 @@ class CompressedBinaryFile : public BinaryFile {
         virtual std::ostream &write_uint64(const uint64_t &value) {
             return write(value);
         }
+
+        void compress_file();
 };
