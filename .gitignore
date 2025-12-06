@@ -1,6 +1,7 @@
 Makefile
 *.proj
 /built/
+/Old/
 *.vcxproj.user
 .vs
 *.log

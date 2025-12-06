@@ -1,9 +1,6 @@
 #pragma once
 
-#include "Types.h"
-
 #include <assert.h>
-#include <stdint.h>
 
 #include <istream>
 #include <ostream>
@@ -11,6 +8,8 @@
 #include <sstream>
 #include <cstring>
 #include <string>
+
+#include "types.h"
 
 class BinaryFile;
 class CompressedBinaryFile;
@@ -152,13 +151,13 @@ class CompressedBinaryFile : public BinaryFile {
             return write(value.z);
         }
 
-        std::ostream& write(const Vector3d &value) {
+        std::ostream &write(const Vector3d &value) {
             write(value.x);
             write(value.y);
             return write(value.z);
         }
 
-        std::ostream& write(const Vector4f &value) {
+        std::ostream &write(const Vector4f &value) {
             write(value.x);
             write(value.y);
             write(value.z);
@@ -177,7 +176,7 @@ class CompressedBinaryFile : public BinaryFile {
 
             for (uint8_t i = 0; i < 4; i++) {
                 for (uint8_t j = 0; j < 4; j++) {
-                    stream = &write(value.mat[i][j]);
+                    stream = &write(value[i][j]);
                 }
             }
             return *stream;
@@ -188,7 +187,7 @@ class CompressedBinaryFile : public BinaryFile {
 
             for (uint8_t i = 0; i < 4; i++) {
                 for (uint8_t j = 0; j < 4; j++) {
-                    stream = &write(value.mat[i][j]);
+                    stream = &write(value[i][j]);
                 }
             }
             return *stream;

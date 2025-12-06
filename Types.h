@@ -1,54 +1,31 @@
-#pragma once
+#ifndef TYPES
+#define TYPES
 
 #include <stdint.h>
+
+#include <SAA.h>
+
+#include "Softimage\SI_types.h"
 
 #define SIZE uint64_t
 
 union FourByteUnion {
-	int32_t ival;
-	uint32_t uval;
-	float fval;
+  int32_t ival;
+  uint32_t uval;
+  float fval;
 };
 
 union EightByteUnion {
-	int64_t ival;
-	uint64_t uval;
-	double fval;
+  int64_t ival;
+  uint64_t uval;
+  double fval;
 };
 
-enum CoordinateSystem : uint8_t {
-	LOCAL,
-	GLOBAL
-};
+#define Vector3f SI_Vector3f
+#define Vector3d SI_Vector3d
+#define Vector4f SI_Vector4f
+#define Vector4d SI_Vector4d
+#define Matrix4f SI_Matrix4f
+#define Matrix4d SI_Matrix4d
 
-struct Matrix4f {
-	float mat[4][4];
-};
-
-struct Matrix4d {
-	double mat[4][4];
-};
-
-struct Vector3b {
-	bool x, y, z;
-};
-
-struct Vector3f {
-	float x, y, z;
-};
-
-struct Vector3d {
-	double x, y, z;
-};
-
-struct Vector4b {
-	bool x, y, z, w;
-};
-
-struct Vector4f {
-	float x, y, z, w;
-};
-
-struct Vector4d {
-	double x, y, z, w;
-};
+#endif // TYPES
