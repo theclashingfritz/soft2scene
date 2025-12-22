@@ -162,12 +162,14 @@
     <ClCompile Include="binaryFile.cpp" />
     <ClCompile Include="soft2scene.cpp" />
     <ClCompile Include="Softimage\SI_interface.cpp" />
+    <ClCompile Include="Softimage\SI_utils.cpp" />
     <ClCompile Include="util.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="binaryFile.h" />
     <ClInclude Include="Softimage\SI_interface.h" />
     <ClInclude Include="Softimage\SI_types.h" />
+    <ClInclude Include="Softimage\SI_utils.h" />
     <ClInclude Include="types.h" />
     <ClInclude Include="util.h" />
   </ItemGroup>

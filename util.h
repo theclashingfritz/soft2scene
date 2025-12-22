@@ -1,6 +1,9 @@
 #pragma once
 
+#include <stdio.h>
 #include <Windows.h>
+
+#include "types.h"
 
 #ifdef _DEBUG
   #define dprintf(format, ...) printf(format, __VA_ARGS__);

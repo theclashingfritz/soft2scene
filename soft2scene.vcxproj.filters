@@ -33,6 +33,9 @@
     <ClCompile Include="Softimage\SI_interface.cpp">
       <Filter>Source Files\Softimage</Filter>
     </ClCompile>
+    <ClCompile Include="Softimage\SI_utils.cpp">
+      <Filter>Source Files\Softimage</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="binaryFile.h">
@@ -48,6 +51,9 @@
       <Filter>Header Files\Softimage</Filter>
     </ClInclude>
     <ClInclude Include="Softimage\SI_types.h">
+      <Filter>Header Files\Softimage</Filter>
+    </ClInclude>
+    <ClInclude Include="Softimage\SI_utils.h">
       <Filter>Header Files\Softimage</Filter>
     </ClInclude>
   </ItemGroup>

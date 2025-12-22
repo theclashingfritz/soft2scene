@@ -13,47 +13,31 @@ BinaryFile::BinaryFile() {
 }
 
 BinaryFile::BinaryFile(const char *fname) : filepath(fname) {
-	filestream.open(filepath, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
-	if (!filestream.is_open()) {
-		std::cerr << "File Error: " << strerror(errno) << std::endl;
-	}
+    filestream.open(filepath, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
+    if (!filestream.is_open()) {
+        std::cerr << "File Error: " << strerror(errno) << std::endl;
+    }
 }
 
 BinaryFile::~BinaryFile() {
-	if (filestream.is_open()) {
-		filestream.close();
-	}
+    if (filestream.is_open()) {
+        filestream.close();
+    }
 }
 
-CompressedBinaryFile::CompressedBinaryFile() {
+void BinaryFile::compress_file() {
+    filestream.seekg(0, std::ios::end);
+    size_t length = filestream.tellg();
+    filestream.seekg(0, std::ios::beg);
 
-}
+    char *inbuffer = new char[length + 1];
 
-CompressedBinaryFile::CompressedBinaryFile(const char *fname) : BinaryFile(fname) {
+    // Read file
+    filestream.read(inbuffer, length);
+    filestream.close();
 
-}
-
-CompressedBinaryFile::~CompressedBinaryFile() {
-	if (filestream.is_open()) {
-		compress_file();
-		filestream.close();
-	}
-}
-
-
-void CompressedBinaryFile::compress_file() {
-	filestream.seekg(0, std::ios::end);
-	size_t length = filestream.tellg();
-	filestream.seekg(0, std::ios::beg);
-
-	char *inbuffer = new char[length + 1];
-
-	// Read file
-	filestream.read(inbuffer, length);
-	filestream.close();
-
-	// Reopen the file.
-	filestream.open(filepath, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
+    // Reopen the file.
+    filestream.open(filepath, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
 
     const size_t BUFSIZE = 128 * 1024;
     uint8_t temp_buffer[BUFSIZE];
@@ -127,4 +111,19 @@ void CompressedBinaryFile::compress_file() {
 
     // Free our buffer!
     free(buffer);
+}
+
+CompressedBinaryFile::CompressedBinaryFile() {
+
+}
+
+CompressedBinaryFile::CompressedBinaryFile(const char *fname) : BinaryFile(fname) {
+
+}
+
+CompressedBinaryFile::~CompressedBinaryFile() {
+    if (filestream.is_open()) {
+        compress_file();
+        filestream.close();
+    }
 }

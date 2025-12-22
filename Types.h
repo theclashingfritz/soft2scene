@@ -27,5 +27,7 @@ union EightByteUnion {
 #define Vector4d SI_Vector4d
 #define Matrix4f SI_Matrix4f
 #define Matrix4d SI_Matrix4d
+#define ColorRGB SAA_ColorRGB
+#define ColorRGBA SAA_ColorRGBA
 
 #endif // TYPES

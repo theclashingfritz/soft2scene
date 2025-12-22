@@ -12,7 +12,10 @@
 
 #include <SAA.h>
 
-#include "Softimage\SAA_interface.h"
+#include "binaryFile.h"
+#include "util.h"
+
+#include "Softimage\SI_interface.h"
 
 //// Global Variables ////
 
@@ -27,14 +30,16 @@ static char *rsrc_path = default_rsrc_path;
 static char *texture_list_filename = nullptr;
 
 // Global SAA variables
-static SAA_Database database;
-static SAA_Scene scene;
 static SAA_Boolean uv_swap = FALSE;
+
+// Global SI variables
+static SI_Scene siscene;
 
 // Global toggles.
 static bool make_poly = true;
 static bool make_nurbs = true;
 static bool make_duv = false;
+static bool make_pose = false;
 static bool use_prefix = false;
 
 // Other global variables. 
@@ -85,6 +90,50 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         }
     }
     
+    // Convert the scene into our new format.
+    error = SI_GetScene(scene, siscene);
+    if (error != SI_ERR_NONE) {
+        fprintf(log_file, "Failed to convert scene %s with error: %d\n", scene_name, error);
+        safe_exit(1);
+    }
+    
+    fprintf(log_file, "Saving converted scene %s...\n", siscene.name);
+    
+    fprintf(log_file, "DEBUG: Scene prefix: %s\n", siscene.prefix);
+    fprintf(log_file, "DEBUG: Scene name: %s\n", siscene.name);
+    fprintf(log_file, "DEBUG: Scene element count: %d\n", siscene.num_elements);
+    fprintf(log_file, "DEBUG: Scene texture2d count: %d\n", siscene.num_textures2d);
+    fprintf(log_file, "DEBUG: Scene texture3d count: %d\n", siscene.num_textures3d);
+    fprintf(log_file, "DEBUG: Scene material count: %d\n", siscene.num_materials);
+    fprintf(log_file, "DEBUG: Scene fcurve count: %d\n", siscene.num_fcurves);
+    fprintf(log_file, "DEBUG: Scene constraint count: %d\n", siscene.num_constraints);
+    fprintf(log_file, "DEBUG: Scene scaling type: %d\n", siscene.scaling);
+    
+    fprintf(log_file, "====TEXTURE2D====\n");
+    for (uint32_t i = 0; i < siscene.num_textures2d; i++) {
+        SI_Texture2d &tex = siscene.textures2d[i];
+        fprintf(log_file, "DEBUG [TEXTURE2D]: %d, %d, %d, %s.%s, %s\n", tex.id, tex.chapter, tex.revision, tex.prefix, tex.name, tex.filepath);
+    }
+    
+    fprintf(log_file, "====TEXTURE3D====\n");
+    for (uint32_t i = 0; i < siscene.num_textures3d; i++) {
+        SI_Texture3d &tex = siscene.textures3d[i];
+        fprintf(log_file, "DEBUG [TEXTURE3D]: %d, %d, %d, %s.%s\n", tex.id, tex.chapter, tex.revision, tex.prefix, tex.name);
+    }
+    
+    fprintf(log_file, "====MATERIAL====\n");
+    for (uint32_t i = 0; i < siscene.num_materials; i++) {
+        SI_Material &mat = siscene.materials[i];
+        fprintf(log_file, "DEBUG [MATERIAL]: %d, %d, %d, %s.%s, %d, %d, %d, %d\n", mat.id, mat.chapter, mat.revision, mat.prefix, mat.name, 
+                mat.num_active_tex2d, mat.num_passive_tex2d, mat.num_active_tex3d, mat.num_passive_tex3d);
+    }
+    
+    fprintf(log_file, "====FCURVES====\n");
+    for (uint32_t i = 0; i < siscene.num_fcurves; i++) {
+        SI_FCurve &fcurve = siscene.fcurves[i];
+        fprintf(log_file, "DEBUG [FCURVE]: %d, %d, %d, %s.%s, %s\n", fcurve.id, fcurve.chapter, fcurve.revision, fcurve.prefix, fcurve.name, fcurve.trackname);
+    }
+    
     // Open our binary file for writing.
     std::string filename(scene_name);
     {
@@ -92,7 +141,12 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         filename += file_ext;
     }
     dprintf("Writing scene '%s' to file '%s'.\n", scene_name, filename.c_str());
-    CompressedBinaryFile file(filename.c_str());
+    BinaryFile file(filename.c_str());
+    
+    file.write("SISCENE");
+    SI_WriteScene(siscene, &file);
+    
+    file.compress_file();
 
     return 0;
 }
@@ -112,11 +166,13 @@ SI_Error init_soft2scene(int argc, char* argv[]) {
         safe_exit(1);
     }
     
+    SAA_Database database;
     if ((error = SAA_databaseLoad(database_name, &database)) != SI_SUCCESS) {
         printf("Error: Couldn't load database!\n");
         safe_exit(1);
     }
-
+    
+    SAA_Scene scene;
     if ((error = SAA_sceneGetCurrent(&scene)) != SI_SUCCESS) {
         printf("Error: Couldn't load current scene!\n");
         safe_exit(1);

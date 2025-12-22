@@ -11,6 +11,16 @@ typedef struct
    double x, y, z;
 }  SAA_DVector3;
 
+typedef struct
+{
+   float r, g, b;
+}  SAA_ColorRGB;
+
+typedef struct
+{
+   float r, g, b, a;
+}  SAA_ColorRGBA;
+
 #define SI_Vector3f SAA_Vector3
 #define SI_Vector3d SAA_DVector3
 #define SI_Vector4f SAA_Vector
@@ -41,14 +51,29 @@ enum SI_ConstraintType: uint8_t {
   UP_VCT,
 };
 
+enum SI_Texture2dFlags: uint8_t {
+  None         = 0,
+  Interpolate  = 1 << 0,
+  Displacement = 1 << 1,
+  UVSwap       = 1 << 2,
+  UVWrap       = 1 << 3,
+  AltH         = 1 << 4,
+  AltV         = 1 << 5
+};
+
 typedef struct
 {
   char *prefix;
   char *name;
+  uint32_t prefix_len;
+  uint32_t name_len;
   int32_t revision;
   int32_t wireframecol;
   SAA_WireType wiretype;
   SAA_ChapterType chapter;
+  
+  // Debugging only variables.
+  int id;
 } SI_Element;
 
 typedef struct : SI_Element
@@ -87,6 +112,7 @@ typedef struct : SI_Element
 {
   char *trackname;
   SI_FCurveKey *keys;
+  uint32_t trackname_len;
   uint32_t num_keys;
   SAA_FcurveInterpType interp;
   SAA_FcurveExtrapType preextrap;
@@ -97,6 +123,7 @@ typedef struct : SI_Element
 typedef struct : SI_Element
 {
   char *filepath;
+  uint32_t filepath_len;
   float transparency;
   float ambieance;
   float roughness;
@@ -120,21 +147,58 @@ typedef struct : SI_Element
   SAA_MappingType mapping;
   SAA_MapComponent map_component;
   SAA_MaskingType masking;
+  bool interpolate;
+  bool displacement; // For Mental Ray only.
   bool uv_swap;
   bool uv_wrap;
-  bool interpolate;
   bool alth;
   bool altv;
-  bool displacement; // For Mental Ray only.
 } SI_Texture2d;
 
 typedef struct : SI_Element
 {
-  SI_Texture2d *textures;
-  uint32_t num_textures;
-  SI_Vector3f ambieance;
-  SI_Vector3f diffuse;
-  SI_Vector3f specular;
+  SAA_ColorRGBA color0;
+  SAA_ColorRGBA color1;
+  SAA_ColorRGBA color2;
+  SAA_ColorRGBA color3;
+  SAA_ColorRGBA color4;
+  SI_Vector3f translation;
+  SI_Vector3f rotation;
+  SI_Vector3f scaling;
+  SI_Vector3f factor;
+  float ambient;
+  float blending;
+  float diffuse;
+  float power;
+  float reflection;
+  float roughness;
+  float strength;
+  float spacing;
+  float tapering;
+  float transparency;
+  int32_t iteration;
+  SAA_MaskingType masking;
+} SI_Texture3d;
+
+/* 
+  Material
+
+  Materials only store local textures. If you want textures from the global pool.
+  That is stored with the model instead.
+ */
+typedef struct : SI_Element
+{
+  SI_Texture2d *active_tex2d;
+  SI_Texture2d *passive_tex2d;
+  SI_Texture3d *active_tex3d;
+  SI_Texture3d *passive_tex3d;
+  uint32_t num_active_tex2d;
+  uint32_t num_passive_tex2d;
+  uint32_t num_active_tex3d;
+  uint32_t num_passive_tex3d;
+  SAA_ColorRGB ambieance;
+  SAA_ColorRGB diffuse;
+  SAA_ColorRGB specular;
   float specular_decay;
   float reflection;
   float refractive_index;
@@ -151,8 +215,21 @@ typedef struct
 {
   char *prefix;
   char *name;
+  SI_Element *elements;
+  SI_Texture2d *textures2d;
+  SI_Texture3d *textures3d;
+  SI_Material *materials;
   SI_FCurve *fcurves;
+  SI_Constraint *constraints;
+  uint32_t prefix_len;
+  uint32_t name_len;
+  uint32_t num_elements;
+  uint32_t num_textures2d;
+  uint32_t num_textures3d;
+  uint32_t num_materials;
   uint32_t num_fcurves;
+  uint32_t num_constraints;
+  SAA_ScalingType scaling;
 } SI_Scene;
 
 #endif // SI_TYPES
