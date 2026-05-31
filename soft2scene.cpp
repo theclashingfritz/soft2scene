@@ -128,6 +128,13 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
         fprintf(log_file, "DEBUG [MATERIAL]: %d, %d, %d, %s.%s, %d, %d, %d, %d\n", i, mat.chapter, mat.revision, mat.prefix, mat.name, 
                 mat.num_active_tex2d, mat.num_passive_tex2d, mat.num_active_tex3d, mat.num_passive_tex3d);
     }
+
+    fprintf(log_file, "====MODELS====\n");
+    for (uint32_t i = 0; i < siscene.models.size(); i++) {
+        SI_Model &model = siscene.models[i];
+        fprintf(log_file, "DEBUG [MODEL]: %d, %d, %d, %s.%s, %d, %d, %d, %d, %d\n", i, model.chapter, model.revision, model.prefix, model.name, 
+                model.num_children, model.num_shapes, model.num_active_materials, model.num_passive_materials, model.type);
+    }
     
     fprintf(log_file, "====FCURVES====\n");
     for (uint32_t i = 0; i < siscene.fcurves.size(); i++) {

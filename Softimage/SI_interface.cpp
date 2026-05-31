@@ -226,7 +226,7 @@ SI_Error Material_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Material &mat) {
 }
 
 SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
-    SI_Error error = Element_SAA2SI(scene, elem, mat);
+    SI_Error error = Element_SAA2SI(scene.saa_scene, elem, mdl);
     if (error != SI_SUCCESS) { return error; }
     
     error = SAA_modelGetType(scene.saa_scene, elem, &mdl.type);
@@ -265,14 +265,14 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
         
         mdl.shape_curves = nullptr;
         mdl.num_shape_curves = 0;
-        if (scene.shape_interp == SAA_ANIM_WEIGHT) {
+        if (mdl.shape_interp == SAA_ANIM_WEIGHT) {
             SAA_Elem *wfcvs = new SAA_Elem[num_shapes + 1];
             error = SAA_modelFcurveGetShapeWeights(scene.saa_scene, elem, num_shapes, wfcvs);
             mdl.num_shape_curves = num_shapes;
             
             mdl.shape_curves = new SI_FCurve *[mdl.num_shape_curves + 1]();
             for (uint32_t i = 0; i < mdl.num_shape_curves; i++) {
-                if (SI_HasSAAElement(scene, &wfcvs[i], &mdl.shape_curves[i])) { continue; }
+                if (SI_HasSAAElement(scene, &wfcvs[i], (SI_Element **)&mdl.shape_curves[i])) { continue; }
                 
                 size_t index = scene.fcurves.size();
                 scene.fcurves.resize(index + 1);
@@ -286,7 +286,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
             mdl.num_shape_curves = 1;
             
             mdl.shape_curves = new SI_FCurve *[mdl.num_shape_curves + 1]();
-            if (SI_HasSAAElement(scene, &fcv, &mdl.shape_curves[0]) != 1) {
+            if (SI_HasSAAElement(scene, &fcv, (SI_Element **)&mdl.shape_curves[0]) != 1) {
                 size_t index = scene.fcurves.size();
                 scene.fcurves.resize(index + 1);
                 error = FCurve_SAA2SI(scene.saa_scene, &fcv, scene.fcurves[index]);
@@ -294,7 +294,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
             }
         }
 
-        scene.shape_vertices = new SI_Vector4d *[mdl.num_shapes + 1]();
+        mdl.shape_vertices = new SI_Vector4d *[mdl.num_shapes + 1]();
         for (uint32_t i = 0; i < mdl.num_shapes; i++) {
             mdl.shape_vertices[i] = new SI_Vector4d[mdl.num_vertices + 1]();
             error = SAA_modelGetVertices(scene.saa_scene, elem, SAA_GEOM_SHAPE, i + 1, nb_vertices, mdl.shape_vertices[i]);
@@ -315,7 +315,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
     for (uint32_t i = 0; i < mdl.num_active_materials; i++) {
         // Check and see if the element already exists.
         SI_Element *mat_elem = NULL;
-        if (SI_HasSAAElement(scene, active_materials[i], &mat_elem) == 1) {
+        if (SI_HasSAAElement(scene, &active_materials[i], &mat_elem) == 1) {
             mdl.active_materials[i] = (SI_Material *)mat_elem;
             continue;
         }
@@ -323,7 +323,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
         // If not. We need to process it, add it to the scene info, and then store a reference.
         uint32_t index = scene.materials.size();
         scene.materials.resize(index + 1);
-        error = Material_SAA2SI(scene.saa_scene, active_materials[i], scene.materials[index]);
+        error = Material_SAA2SI(scene.saa_scene, &active_materials[i], scene.materials[index]);
         scene.materials[index].id = index;
         mdl.active_materials[i] = &scene.materials[index];
     };
@@ -341,7 +341,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
     for (uint32_t i = 0; i < mdl.num_passive_materials; i++) {
         // Check and see if the element already exists.
         SI_Element *mat_elem = NULL;
-        if (SI_HasSAAElement(scene, passive_materials[i], &mat_elem) == 1) {
+        if (SI_HasSAAElement(scene, &passive_materials[i], &mat_elem) == 1) {
             mdl.passive_materials[i] = (SI_Material *)mat_elem;
             continue;
         }
@@ -349,7 +349,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
         // If not. We need to process it, add it to the scene info, and then store a reference.
         uint32_t index = scene.materials.size();
         scene.materials.resize(index + 1);
-        error = Material_SAA2SI(scene.saa_scene, passive_materials[i], scene.materials[index]);
+        error = Material_SAA2SI(scene.saa_scene, &passive_materials[i], scene.materials[index]);
         scene.materials[index].id = index;
         mdl.passive_materials[i] = &scene.materials[index];
     };
@@ -361,7 +361,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
     
     // Get the number of children this model has.
     int num_children = 0;
-    error = SAA_modelGetNbChildren(scene, elem, &num_children);
+    error = SAA_modelGetNbChildren(scene.saa_scene, elem, &num_children);
     mdl.num_children = num_children;
     
     // Only perform work for children if we have them.
@@ -369,7 +369,7 @@ SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
         // Allocate the arrays for the children and retrieve the child elements.
         mdl.saa_children = new SAA_Elem[mdl.num_children + 1]();
         mdl.children = new SI_Model *[mdl.num_children + 1]();
-        error = SAA_modelGetChildren(scene, elem, num_children, mdl.saa_children);
+        error = SAA_modelGetChildren(scene.saa_scene, elem, num_children, mdl.saa_children);
     }
     
     return error;
@@ -985,7 +985,7 @@ SI_Error Scene_SAA2SI(SI_Scene &scene) {
     for (uint32_t i = 0; i < num_textures3d; i++) {
         SAA_Elem *texture3d = &textures3d[i];
         error = Texture3d_SAA2SI(scene.saa_scene, texture3d, scene.textures3d[i]);
-        scene.texture3d[i].id = i;
+        scene.textures3d[i].id = i;
     }
     delete[] textures3d;
     

@@ -256,7 +256,8 @@ typedef struct
   uint32_t num_ctrl_vertices;
 } SI_Triangle;
 
-typedef struct : SI_Element
+struct SI_Model;
+typedef struct SI_Model : SI_Element
 {
   SI_Model *parent;
   SAA_Elem *saa_children;
