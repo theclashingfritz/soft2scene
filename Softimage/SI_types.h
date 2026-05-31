@@ -1,6 +1,8 @@
 #ifndef SI_TYPES
 #define SI_TYPES
 
+#include "..\dynArray.h"
+
 typedef struct
 {
    float x, y, z;
@@ -67,19 +69,25 @@ typedef struct
   char *name;
   uint32_t prefix_len;
   uint32_t name_len;
+  uint32_t id;
   int32_t revision;
   int32_t wireframecol;
   SAA_WireType wiretype;
   SAA_ChapterType chapter;
-  
-  // Debugging only variables.
-  int id;
 } SI_Element;
+
+typedef struct
+{
+  SAA_GeomType gtype;
+  SAA_SubElemType	type;
+ } SI_SubElement;
 
 typedef struct : SI_Element
 {
-  SAA_Elem passive_elem;
-  SAA_Elem *active_elems;
+  SI_Element **active_elems;
+  SI_Element *passive_elem;
+  SAA_Elem *saa_active_elems;
+  SAA_Elem saa_passive_elem;
   uint32_t num_active_elems;
   SI_ConstraintType type;
   bool active;
@@ -119,6 +127,30 @@ typedef struct : SI_Element
   SAA_FcurveExtrapType postextrap;
   bool active;
 } SI_FCurve;
+
+typedef struct : SI_Element
+{
+  char **variable_names;
+  char **variable_strs;
+  char **lhs_track_names;
+  char **rhs_track_names;
+  char *expr_str;
+  char *target_str;
+  uint32_t *variable_name_lens;
+  uint32_t *variable_str_lens;
+  uint32_t *lhs_track_name_lens;
+  uint32_t *rhs_track_name_lens;
+  SI_Element **lhs_elems;
+  SI_Element **rhs_elems;
+  SAA_Elem *saa_lhs_elems;
+  SAA_Elem *saa_rhs_elems;
+  uint32_t expr_str_len;
+  uint32_t target_str_len;
+  uint32_t num_lhs_elems;
+  uint32_t num_rhs_elems;
+  uint32_t num_vars;
+  bool active;
+} SI_Expression;
 
 typedef struct : SI_Element
 {
@@ -213,22 +245,60 @@ typedef struct : SI_Element
 
 typedef struct
 {
+
+} SI_CtrlVertex;
+
+typedef struct
+{
+  SI_Material *materials;
+  SI_CtrlVertex *ctrl_vertices;
+  uint32_t num_materials;
+  uint32_t num_ctrl_vertices;
+} SI_Triangle;
+
+typedef struct : SI_Element
+{
+  SI_Model *parent;
+  SAA_Elem *saa_children;
+  SI_Model **children;
+  SI_Vector4d *vertices;
+  SI_Vector4d *tri_vertices;
+  SI_Triangle *triangles;
+  SI_FCurve **shape_curves;
+  SI_Vector4d **shape_vertices;
+  SI_Material **active_materials;
+  SI_Material **passive_materials;
+  bool *tagged_vertices;
+  SI_Matrix4f matrix;
+  uint32_t num_children;
+  uint32_t num_vertices;
+  uint32_t num_tri_vertices;
+  uint32_t num_triangles;
+  uint32_t num_shapes;
+  uint32_t num_shape_curves;
+  uint32_t num_active_materials;
+  uint32_t num_passive_materials;
+  SAA_AnimMode shape_anim_mode;
+  SAA_AnimInterpType shape_interp;
+  SAA_ModelType type;
+  bool deformed;
+  bool custom_deform;
+} SI_Model;
+
+typedef struct
+{
+  DynArray<SI_FCurve> fcurves;
+  DynArray<SI_Constraint> constraints;
+  DynArray<SI_Expression> expressions;
+  DynArray<SI_Texture2d> textures2d;
+  DynArray<SI_Texture3d> textures3d;
+  DynArray<SI_Material> materials;
+  DynArray<SI_Model> models;
   char *prefix;
   char *name;
-  SI_Element *elements;
-  SI_Texture2d *textures2d;
-  SI_Texture3d *textures3d;
-  SI_Material *materials;
-  SI_FCurve *fcurves;
-  SI_Constraint *constraints;
+  SAA_Scene *saa_scene;
   uint32_t prefix_len;
   uint32_t name_len;
-  uint32_t num_elements;
-  uint32_t num_textures2d;
-  uint32_t num_textures3d;
-  uint32_t num_materials;
-  uint32_t num_fcurves;
-  uint32_t num_constraints;
   SAA_ScalingType scaling;
 } SI_Scene;
 

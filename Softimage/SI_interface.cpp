@@ -1,9 +1,12 @@
 #include "SI_interface.h"
+#include "SI_utils.h"
 
 #include <assert.h>
 #include <cstring>
+#include <stdio.h>
+#include <string.h>
 
-SI_Error SI_GetElement(SAA_Scene *scene, SAA_Elem *elem, SI_Element &si_elem) {
+SI_Error Element_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Element &si_elem) {
     if (scene == nullptr || elem == nullptr) { return SI_ERR_BAD_ARGUMENT; }
     
     // Verify and make sure our element is valid.
@@ -40,14 +43,12 @@ SI_Error SI_GetElement(SAA_Scene *scene, SAA_Elem *elem, SI_Element &si_elem) {
     SAA_elementGetWireColor(scene, elem, &si_elem.wireframecol);
     SAA_elementGetWireType(scene, elem, &si_elem.wiretype);
     
-    si_elem.id = elem->elemid;
-    
     // Success!
     return SI_SUCCESS;
 }
 
-SI_Error SI_GetTexture2d(SAA_Scene *scene, SAA_Elem *elem, SI_Texture2d &tex) {
-    SI_Error error = SI_GetElement(scene, elem, tex);
+SI_Error Texture2d_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Texture2d &tex) {
+    SI_Error error = Element_SAA2SI(scene, elem, tex);
     if (error != SI_SUCCESS) { return error; }
     
     // Get the length of the pic filepath.
@@ -122,8 +123,8 @@ SI_Error SI_GetTexture2d(SAA_Scene *scene, SAA_Elem *elem, SI_Texture2d &tex) {
     return error;
 };
 
-SI_Error SI_GetTexture3d(SAA_Scene *scene, SAA_Elem *elem, SI_Texture3d &tex) {
-    SI_Error error = SI_GetElement(scene, elem, tex);
+SI_Error Texture3d_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Texture3d &tex) {
+    SI_Error error = Element_SAA2SI(scene, elem, tex);
     if (error != SI_SUCCESS) { return error; }
     
     error = SAA_texture3DGetColor0(scene, elem, &tex.color0.r, &tex.color0.g, &tex.color0.b, &tex.color0.a);
@@ -156,8 +157,8 @@ SI_Error SI_GetTexture3d(SAA_Scene *scene, SAA_Elem *elem, SI_Texture3d &tex) {
     return error;
 }
 
-SI_Error SI_GetMaterial(SAA_Scene *scene, SAA_Elem *elem, SI_Material &mat) {
-    SI_Error error = SI_GetElement(scene, elem, mat);
+SI_Error Material_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Material &mat) {
+    SI_Error error = Element_SAA2SI(scene, elem, mat);
     if (error != SI_SUCCESS) { return error; }
     
     // Get the amount of active 2d textures for this material.
@@ -190,7 +191,7 @@ SI_Error SI_GetMaterial(SAA_Scene *scene, SAA_Elem *elem, SI_Material &mat) {
     error = SAA_materialRelationGetT3DLocElements(scene, elem, active_relinfo, num_active_tex3d, active_tex3d);
     for (uint32_t i = 0; i < num_active_tex3d; i++) {
         SI_Texture3d &tex = mat.active_tex3d[i];
-        error = SI_GetTexture3d(scene, &active_tex3d[i], tex);
+        error = Texture3d_SAA2SI(scene, &active_tex3d[i], tex);
     }
     delete[] active_tex3d;
     
@@ -200,7 +201,7 @@ SI_Error SI_GetMaterial(SAA_Scene *scene, SAA_Elem *elem, SI_Material &mat) {
     error = SAA_materialRelationGetT3DLocElements(scene, elem, passive_relinfo, num_passive_tex3d, passive_tex3d);
     for (uint32_t i = 0; i < num_passive_tex3d; i++) {
         SI_Texture3d &tex = mat.passive_tex3d[i];
-        error = SI_GetTexture3d(scene, &passive_tex3d[i], tex);
+        error = Texture3d_SAA2SI(scene, &passive_tex3d[i], tex);
     }
     delete[] passive_tex3d;
     
@@ -224,8 +225,158 @@ SI_Error SI_GetMaterial(SAA_Scene *scene, SAA_Elem *elem, SI_Material &mat) {
     return error;
 }
 
-SI_Error SI_GetPositionConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
-    SI_Error error = SI_GetElement(scene, elem, cns);
+SI_Error Model_SAA2SI(SI_Scene &scene, SAA_Elem *elem, SI_Model &mdl) {
+    SI_Error error = Element_SAA2SI(scene, elem, mat);
+    if (error != SI_SUCCESS) { return error; }
+    
+    error = SAA_modelGetType(scene.saa_scene, elem, &mdl.type);
+    error = SAA_modelGetMatrix(scene.saa_scene, elem, SAA_COORDSYS_LOCAL, mdl.matrix);
+    
+    SAA_Boolean deformed = FALSE;
+    SAA_Boolean custom_deformed = FALSE;
+    error = SAA_modelIsDeformed(scene.saa_scene, elem, &deformed, &custom_deformed);
+    mdl.deformed = deformed != FALSE;
+    mdl.custom_deform = custom_deformed != FALSE;
+    
+    int nb_vertices = 0;
+    error = SAA_modelGetNbVertices(scene.saa_scene, elem, &nb_vertices);
+    mdl.num_vertices = nb_vertices;
+    
+    mdl.vertices = new SI_Vector4d[mdl.num_vertices + 1]();
+    error = SAA_modelGetVertices(scene.saa_scene, elem, mdl.deformed ? SAA_GEOM_DEFORMED : SAA_GEOM_ORIGINAL, 0, nb_vertices, mdl.vertices);
+    
+    SAA_Boolean *tagged = new SAA_Boolean[mdl.num_vertices + 1];
+    mdl.tagged_vertices = new bool[mdl.num_vertices + 1]();
+    error = SAA_modelGetVerticesTagged(scene.saa_scene, elem, nb_vertices, tagged);
+    for (uint32_t i = 0; i < mdl.num_vertices; i++) {
+        mdl.tagged_vertices[i] = tagged[i] != FALSE;
+    }
+    delete[] tagged;
+    
+    // Get all of our shapes and store the info for them.
+    
+    int num_shapes = 0;
+    error = SAA_modelGetNbShapes(scene.saa_scene, elem, &num_shapes);
+    mdl.num_shapes = num_shapes;
+    
+    if (mdl.num_shapes > 0) {
+        error = SAA_modelGetShapeAnimMode(scene.saa_scene, elem, &mdl.shape_anim_mode);
+        error = SAA_modelGetShapeInterpolation(scene.saa_scene, elem, &mdl.shape_interp);
+        
+        mdl.shape_curves = nullptr;
+        mdl.num_shape_curves = 0;
+        if (scene.shape_interp == SAA_ANIM_WEIGHT) {
+            SAA_Elem *wfcvs = new SAA_Elem[num_shapes + 1];
+            error = SAA_modelFcurveGetShapeWeights(scene.saa_scene, elem, num_shapes, wfcvs);
+            mdl.num_shape_curves = num_shapes;
+            
+            mdl.shape_curves = new SI_FCurve *[mdl.num_shape_curves + 1]();
+            for (uint32_t i = 0; i < mdl.num_shape_curves; i++) {
+                if (SI_HasSAAElement(scene, &wfcvs[i], &mdl.shape_curves[i])) { continue; }
+                
+                size_t index = scene.fcurves.size();
+                scene.fcurves.resize(index + 1);
+                error = FCurve_SAA2SI(scene.saa_scene, &wfcvs[i], scene.fcurves[index]);
+                mdl.shape_curves[i] = &scene.fcurves[index];
+            }
+            delete[] wfcvs;
+        } else {
+            SAA_Elem fcv;
+            error = SAA_modelFcurveGetShape(scene.saa_scene, elem, &fcv);
+            mdl.num_shape_curves = 1;
+            
+            mdl.shape_curves = new SI_FCurve *[mdl.num_shape_curves + 1]();
+            if (SI_HasSAAElement(scene, &fcv, &mdl.shape_curves[0]) != 1) {
+                size_t index = scene.fcurves.size();
+                scene.fcurves.resize(index + 1);
+                error = FCurve_SAA2SI(scene.saa_scene, &fcv, scene.fcurves[index]);
+                mdl.shape_curves[0] = &scene.fcurves[index];
+            }
+        }
+
+        scene.shape_vertices = new SI_Vector4d *[mdl.num_shapes + 1]();
+        for (uint32_t i = 0; i < mdl.num_shapes; i++) {
+            mdl.shape_vertices[i] = new SI_Vector4d[mdl.num_vertices + 1]();
+            error = SAA_modelGetVertices(scene.saa_scene, elem, SAA_GEOM_SHAPE, i + 1, nb_vertices, mdl.shape_vertices[i]);
+        }
+    }
+    
+    // Get all of the global materials for this model, active and passive.
+    
+    // Active materials
+    int num_active_materials = 0;
+    void *active_rel_info = NULL;
+    error = SAA_modelRelationGetMatNbElements(scene.saa_scene, elem, TRUE, (const void **)&active_rel_info, &num_active_materials);
+    mdl.num_active_materials = num_active_materials;
+
+    SAA_Elem *active_materials = new SAA_Elem[mdl.num_active_materials + 1];
+    mdl.active_materials = new SI_Material *[mdl.num_active_materials + 1]();
+    error = SAA_modelRelationGetMatElements(scene.saa_scene, elem, active_rel_info, num_active_materials, active_materials);
+    for (uint32_t i = 0; i < mdl.num_active_materials; i++) {
+        // Check and see if the element already exists.
+        SI_Element *mat_elem = NULL;
+        if (SI_HasSAAElement(scene, active_materials[i], &mat_elem) == 1) {
+            mdl.active_materials[i] = (SI_Material *)mat_elem;
+            continue;
+        }
+        
+        // If not. We need to process it, add it to the scene info, and then store a reference.
+        uint32_t index = scene.materials.size();
+        scene.materials.resize(index + 1);
+        error = Material_SAA2SI(scene.saa_scene, active_materials[i], scene.materials[index]);
+        scene.materials[index].id = index;
+        mdl.active_materials[i] = &scene.materials[index];
+    };
+    delete[] active_materials;
+    
+    // Passive materials
+    int num_passive_materials = 0;
+    void *passive_rel_info = NULL;
+    error = SAA_modelRelationGetMatNbElements(scene.saa_scene, elem, FALSE, (const void **)&passive_rel_info, &num_passive_materials);
+    mdl.num_passive_materials = num_passive_materials;
+    
+    SAA_Elem *passive_materials = new SAA_Elem[mdl.num_passive_materials + 1];
+    mdl.passive_materials = new SI_Material *[mdl.num_passive_materials + 1]();
+    error = SAA_modelRelationGetMatElements(scene.saa_scene, elem, passive_rel_info, num_passive_materials, passive_materials);
+    for (uint32_t i = 0; i < mdl.num_passive_materials; i++) {
+        // Check and see if the element already exists.
+        SI_Element *mat_elem = NULL;
+        if (SI_HasSAAElement(scene, passive_materials[i], &mat_elem) == 1) {
+            mdl.passive_materials[i] = (SI_Material *)mat_elem;
+            continue;
+        }
+        
+        // If not. We need to process it, add it to the scene info, and then store a reference.
+        uint32_t index = scene.materials.size();
+        scene.materials.resize(index + 1);
+        error = Material_SAA2SI(scene.saa_scene, passive_materials[i], scene.materials[index]);
+        scene.materials[index].id = index;
+        mdl.passive_materials[i] = &scene.materials[index];
+    };
+    delete[] passive_materials;
+    
+    // TODO: Extract triangles.
+    
+    // Process of the children of the model.
+    
+    // Get the number of children this model has.
+    int num_children = 0;
+    error = SAA_modelGetNbChildren(scene, elem, &num_children);
+    mdl.num_children = num_children;
+    
+    // Only perform work for children if we have them.
+    if (mdl.num_children > 0) {
+        // Allocate the arrays for the children and retrieve the child elements.
+        mdl.saa_children = new SAA_Elem[mdl.num_children + 1]();
+        mdl.children = new SI_Model *[mdl.num_children + 1]();
+        error = SAA_modelGetChildren(scene, elem, num_children, mdl.saa_children);
+    }
+    
+    return error;
+};
+
+SI_Error PosCons_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
+    SI_Error error = Element_SAA2SI(scene, elem, cns);
     if (error != SI_SUCCESS) { return error; }
     
     void *relinfo = nullptr;
@@ -244,16 +395,17 @@ SI_Error SI_GetPositionConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constrain
     cns.num_active_elems = num_active_elem;
     
     // The passive element IS our argument element. No need to grab it again.
-    memcpy(&cns.passive_elem, elem, sizeof(SAA_Elem));
+    memcpy(&cns.saa_passive_elem, elem, sizeof(SAA_Elem));
     
     // Allocate buffer for all of the active SAA Elements.
-    cns.active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.saa_active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.active_elems = new SI_Element *[cns.num_active_elems + 1]();
     // Extract all of the active elements into the buffer.
-    error = SAA_modelRelationGetCnsPosElements(scene, &cns.passive_elem, relinfo, cns.num_active_elems, cns.active_elems);
+    error = SAA_modelRelationGetCnsPosElements(scene, &cns.saa_passive_elem, relinfo, cns.num_active_elems, cns.saa_active_elems);
     
     // Get if the constraint is active or inactive.
     SAA_Boolean active = FALSE;
-    error = SAA_modelRelationGetCnsPosActive(scene, &cns.passive_elem, &cns.passive_elem, &active);
+    error = SAA_modelRelationGetCnsPosActive(scene, &cns.saa_passive_elem, &cns.saa_passive_elem, &active);
     // Set the activity of the constraint.
     cns.active = active == TRUE;
     
@@ -263,8 +415,8 @@ SI_Error SI_GetPositionConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constrain
     return error;
 }
 
-SI_Error SI_GetOrientationConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
-    SI_Error error = SI_GetElement(scene, elem, cns);
+SI_Error OriCons_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
+    SI_Error error = Element_SAA2SI(scene, elem, cns);
     if (error != SI_SUCCESS) { return error; }
     
     void *rel_info = nullptr;
@@ -283,16 +435,17 @@ SI_Error SI_GetOrientationConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constr
     cns.num_active_elems = num_active_elem;
     
     // The passive element IS our argument element. No need to grab it again.
-    memcpy(&cns.passive_elem, elem, sizeof(SAA_Elem));
+    memcpy(&cns.saa_passive_elem, elem, sizeof(SAA_Elem));
     
     // Allocate buffer for all of the active SAA Elements.
-    cns.active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.saa_active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.active_elems = new SI_Element *[cns.num_active_elems + 1]();
     // Extract all of the active elements into the buffer.
-    SAA_modelRelationGetCnsOriElements(scene, &cns.passive_elem, rel_info, cns.num_active_elems, cns.active_elems);
+    SAA_modelRelationGetCnsOriElements(scene, &cns.saa_passive_elem, rel_info, cns.num_active_elems, cns.saa_active_elems);
     
     // Get if the constraint is active or inactive.
     SAA_Boolean active = FALSE;
-    SAA_modelRelationGetCnsOriActive(scene, &cns.passive_elem, &cns.passive_elem, &active);
+    SAA_modelRelationGetCnsOriActive(scene, &cns.saa_passive_elem, &cns.saa_passive_elem, &active);
     // Set the activity of the constraint.
     cns.active = active == TRUE;
     
@@ -302,8 +455,8 @@ SI_Error SI_GetOrientationConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constr
     return SI_SUCCESS;
 }
 
-SI_Error SI_GetScaleConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
-    SI_Error error = SI_GetElement(scene, elem, cns);
+SI_Error SclCons_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
+    SI_Error error = Element_SAA2SI(scene, elem, cns);
     if (error != SI_SUCCESS) { return error; }
     
     void *rel_info = nullptr;
@@ -322,16 +475,17 @@ SI_Error SI_GetScaleConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &
     cns.num_active_elems = num_active_elem;
     
     // The passive element IS our argument element. No need to grab it again.
-    memcpy(&cns.passive_elem, elem, sizeof(SAA_Elem));
+    memcpy(&cns.saa_passive_elem, elem, sizeof(SAA_Elem));
     
     // Allocate buffer for all of the active SAA Elements.
-    cns.active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.saa_active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.active_elems = new SI_Element *[cns.num_active_elems + 1]();
     // Extract all of the active elements into the buffer.
-    SAA_modelRelationGetCnsSclElements(scene, &cns.passive_elem, rel_info, cns.num_active_elems, cns.active_elems);
+    SAA_modelRelationGetCnsSclElements(scene, &cns.saa_passive_elem, rel_info, cns.num_active_elems, cns.saa_active_elems);
     
     // Get if the constraint is active or inactive.
     SAA_Boolean active = FALSE;
-    SAA_modelRelationGetCnsSclActive(scene, &cns.passive_elem, &cns.passive_elem, &active);
+    SAA_modelRelationGetCnsSclActive(scene, &cns.saa_passive_elem, &cns.saa_passive_elem, &active);
     // Set the activity of the constraint.
     cns.active = active == TRUE;
     
@@ -341,8 +495,8 @@ SI_Error SI_GetScaleConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &
     return SI_SUCCESS;
 }
 
-SI_Error SI_GetPositionLimitsConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_PositionLimitConstraint &cns) {
-    SI_Error error = SI_GetElement(scene, elem, cns);
+SI_Error PosLimCons_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_PositionLimitConstraint &cns) {
+    SI_Error error = Element_SAA2SI(scene, elem, cns);
     if (error != SI_SUCCESS) { return error; }
     
     void *rel_info = nullptr;
@@ -361,16 +515,17 @@ SI_Error SI_GetPositionLimitsConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Pos
     cns.num_active_elems = num_active_elem;
     
     // The passive element IS our argument element. No need to grab it again.
-    memcpy(&cns.passive_elem, elem, sizeof(SAA_Elem));
+    memcpy(&cns.saa_passive_elem, elem, sizeof(SAA_Elem));
     
     // Allocate buffer for all of the active SAA Elements.
-    cns.active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.saa_active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.active_elems = new SI_Element *[cns.num_active_elems + 1]();
     // Extract all of the active elements into the buffer.
-    SAA_modelRelationGetCnsPosLimElements(scene, &cns.passive_elem, rel_info, cns.num_active_elems, cns.active_elems);
+    SAA_modelRelationGetCnsPosLimElements(scene, &cns.saa_passive_elem, rel_info, cns.num_active_elems, cns.saa_active_elems);
     
     // Get if the constraint is active or inactive.
     SAA_Boolean active = FALSE;
-    SAA_modelRelationGetCnsPosLimActive(scene, &cns.passive_elem, &cns.passive_elem, &active);
+    SAA_modelRelationGetCnsPosLimActive(scene, &cns.saa_passive_elem, &cns.saa_passive_elem, &active);
     // Set the activity of the constraint.
     cns.active = active == TRUE;
     
@@ -415,8 +570,8 @@ SI_Error SI_GetPositionLimitsConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Pos
     return SI_SUCCESS;
 }
 
-SI_Error SI_GetRotationLimitsConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_RotationLimitConstraint &cns) {
-    SI_Error error = SI_GetElement(scene, elem, cns);
+SI_Error RotLimCons_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_RotationLimitConstraint &cns) {
+    SI_Error error = Element_SAA2SI(scene, elem, cns);
     if (error != SI_SUCCESS) { return error; }
     
     void *rel_info = nullptr;
@@ -435,16 +590,17 @@ SI_Error SI_GetRotationLimitsConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Rot
     cns.num_active_elems = num_active_elem;
     
     // The passive element IS our argument element. No need to grab it again.
-    memcpy(&cns.passive_elem, elem, sizeof(SAA_Elem));
+    memcpy(&cns.saa_passive_elem, elem, sizeof(SAA_Elem));
     
     // Allocate buffer for all of the active SAA Elements.
-    cns.active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.saa_active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.active_elems = new SI_Element *[cns.num_active_elems + 1]();
     // Extract all of the active elements into the buffer.
-    SAA_modelRelationGetCnsRotLimElements(scene, &cns.passive_elem, rel_info, cns.num_active_elems, cns.active_elems);
+    SAA_modelRelationGetCnsRotLimElements(scene, &cns.saa_passive_elem, rel_info, cns.num_active_elems, cns.saa_active_elems);
     
     // Get if the constraint is active or inactive.
     SAA_Boolean active = FALSE;
-    SAA_modelRelationGetCnsRotLimActive(scene, &cns.passive_elem, &cns.passive_elem, &active);
+    SAA_modelRelationGetCnsRotLimActive(scene, &cns.saa_passive_elem, &cns.saa_passive_elem, &active);
     // Set the activity of the constraint.
     cns.active = active == TRUE;
     
@@ -480,8 +636,8 @@ SI_Error SI_GetRotationLimitsConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Rot
     return SI_SUCCESS;
 }
 
-SI_Error SI_GetUpVctConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
-    SI_Error error = SI_GetElement(scene, elem, cns);
+SI_Error VctCons_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &cns) {
+    SI_Error error = Element_SAA2SI(scene, elem, cns);
     if (error != SI_SUCCESS) { return error; }
     
     void *rel_info = nullptr;
@@ -500,16 +656,17 @@ SI_Error SI_GetUpVctConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &
     cns.num_active_elems = num_active_elem;
     
     // The passive element IS our argument element. No need to grab it again.
-    memcpy(&cns.passive_elem, elem, sizeof(SAA_Elem));
+    memcpy(&cns.saa_passive_elem, elem, sizeof(SAA_Elem));
     
     // Allocate buffer for all of the active SAA Elements.
-    cns.active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.saa_active_elems = new SAA_Elem[cns.num_active_elems + 1]();
+    cns.active_elems = new SI_Element *[cns.num_active_elems + 1]();
     // Extract all of the active elements into the buffer.
-    SAA_modelRelationGetCnsUpVctElements(scene, &cns.passive_elem, rel_info, cns.num_active_elems, cns.active_elems);
+    SAA_modelRelationGetCnsUpVctElements(scene, &cns.saa_passive_elem, rel_info, cns.num_active_elems, cns.saa_active_elems);
     
     // Get if the constraint is active or inactive.
     SAA_Boolean active = FALSE;
-    SAA_modelRelationGetCnsUpVctActive(scene, &cns.passive_elem, &cns.passive_elem, &active);
+    SAA_modelRelationGetCnsUpVctActive(scene, &cns.saa_passive_elem, &cns.saa_passive_elem, &active);
     // Set the activity of the constraint.
     cns.active = active == TRUE;
     
@@ -519,8 +676,8 @@ SI_Error SI_GetUpVctConstraint(SAA_Scene *scene, SAA_Elem *elem, SI_Constraint &
     return SI_SUCCESS;
 }
 
-SI_Error SI_GetFCurve(SAA_Scene *scene, SAA_Elem *fcurve, SI_FCurve &curv) {
-    SI_Error error = SI_GetElement(scene, fcurve, curv);
+SI_Error FCurve_SAA2SI(SAA_Scene *scene, SAA_Elem *fcurve, SI_FCurve &curv) {
+    SI_Error error = Element_SAA2SI(scene, fcurve, curv);
     if (error != SI_SUCCESS) { return error; }
     
     // Get the number of owners (1). Anything other then 1 is an error.
@@ -616,7 +773,126 @@ SI_Error SI_GetFCurve(SAA_Scene *scene, SAA_Elem *fcurve, SI_FCurve &curv) {
     return error;
 };
 
-SI_Error SI_GetScene(SAA_Scene *scene, SI_Scene &siscene) {
+SI_Error Expression_SAA2SI(SAA_Scene *scene, SAA_Elem *elem, SI_Expression &express) {
+    SI_Error error = Element_SAA2SI(scene, elem, express);
+    if (error != SI_SUCCESS) { return error; }
+    
+    // Get if the expression is active or not.
+    SAA_Boolean active = FALSE;
+    error = SAA_expressionGetActive(scene, elem, &active);
+    assert(error == SI_SUCCESS);
+    express.active = active != FALSE;
+    
+    // Get the target string length.
+    int targetstrlen = 0;
+    error = SAA_expressionGetTargetStringLength(scene, elem, &targetstrlen);
+    assert(error == SI_SUCCESS);
+    express.target_str_len = targetstrlen;
+    
+    // Allocate the target string buffer and then get the target string.
+    express.target_str = new char[express.target_str_len + 1]();
+    error = SAA_expressionGetTargetString(scene, elem, ++targetstrlen, express.target_str);
+    assert(error == SI_SUCCESS);
+    
+    // Get the number of expression variables.
+    int nbvars = -1;
+    error = SAA_expressionGetNbVars(scene, elem, &nbvars);
+    assert(error == SI_SUCCESS && nbvars != -1);
+    express.num_vars = nbvars;
+    
+    int *varnamelens = new int[nbvars + 1];
+    int *varstrlens = new int[nbvars + 1];
+    int exprstrlen = 0;
+    error = SAA_expressionGetStringLengths(scene, elem, nbvars, varnamelens, varstrlens, &exprstrlen);
+    assert(error == SI_SUCCESS);
+    
+    express.expr_str_len = exprstrlen; 
+    express.variable_name_lens = new uint32_t[express.num_vars + 1]();
+    express.variable_str_lens = new uint32_t[express.num_vars + 1]();
+    for (uint32_t i = 0; i < express.num_vars; i++) {
+        express.variable_name_lens[i] = varnamelens[i];
+        express.variable_str_lens[i] = varstrlens[i];
+    }
+    
+    express.variable_names = new char *[express.num_vars + 1]();
+    for (uint32_t i = 0; i < express.num_vars; i++) {
+        express.variable_names[i] = new char[express.variable_name_lens[i] + 1]();
+    }
+    
+    express.variable_strs = new char *[express.num_vars + 1]();
+    for (uint32_t i = 0; i < express.num_vars; i++) {
+        express.variable_strs[i] = new char[express.variable_str_lens[i] + 1]();
+    }
+    
+    express.expr_str = new char[express.expr_str_len + 1]();
+    error = SAA_expressionGetStrings(scene, elem, nbvars, varnamelens, varstrlens, ++exprstrlen, express.variable_names, express.variable_strs, express.expr_str);
+    assert(error == SI_SUCCESS);
+    delete[] varnamelens;
+    delete[] varstrlens;
+    
+    // Get the number of left-hand-side elements.
+    int nblhs = 0;
+    error = SAA_expressionGetNbElements(scene, elem, TRUE, &nblhs);
+    assert(error == SI_SUCCESS);
+    express.num_lhs_elems = nblhs;
+    
+    // Get the lengths of all of the left-hand-side tracknames.
+    int *lhstracknamelens = new int[nblhs + 1];
+    error = SAA_expressionGetTracknameLengths(scene, elem, TRUE, nblhs, lhstracknamelens);
+    assert(error == SI_SUCCESS);
+    express.lhs_track_name_lens = new uint32_t[express.num_lhs_elems + 1]();
+    for (uint32_t i = 0; i < express.num_lhs_elems; i++) {
+        express.lhs_track_name_lens[i] = lhstracknamelens[i];
+        ++lhstracknamelens[i];
+    }
+    
+    // Allocate the arrays needed to store the left-hand-side tracknames.
+    express.lhs_track_names = new char *[express.num_lhs_elems + 1]();
+    for (uint32_t i = 0; i < express.num_lhs_elems; i++) {
+        express.lhs_track_names[i] = new char[express.lhs_track_name_lens[i] + 1]();
+    }
+    
+    // Get all of our left-hand-side tracknames and elements.
+    express.lhs_elems = new SI_Element *[nblhs + 1]();
+    express.saa_lhs_elems = new SAA_Elem[nblhs + 1]();
+    error = SAA_expressionGetElements(scene, elem, TRUE, nblhs, lhstracknamelens, express.saa_lhs_elems, express.lhs_track_names);
+    assert(error == SI_SUCCESS);
+    delete[] lhstracknamelens;
+    
+    
+    // Get the number of right-hand-side elements.
+    int nbrhs = 0;
+    error = SAA_expressionGetNbElements(scene, elem, FALSE, &nbrhs);
+    assert(error == SI_SUCCESS);
+    express.num_rhs_elems = nbrhs;
+    
+    // Get the lengths of all of the right-hand-side tracknames.
+    int *rhstracknamelens = new int[nbrhs + 1];
+    error = SAA_expressionGetTracknameLengths(scene, elem, FALSE, nbrhs, rhstracknamelens);
+    assert(error == SI_SUCCESS);
+    express.rhs_track_name_lens = new uint32_t[express.num_rhs_elems + 1]();
+    for (uint32_t i = 0; i < express.num_rhs_elems; i++) {
+        express.rhs_track_name_lens[i] = rhstracknamelens[i];
+        ++rhstracknamelens[i];
+    }
+    
+    // Allocate the arrays needed to store the right-hand-side tracknames.
+    express.rhs_track_names = new char *[express.num_rhs_elems + 1]();
+    for (uint32_t i = 0; i < express.num_rhs_elems; i++) {
+        express.rhs_track_names[i] = new char[express.rhs_track_name_lens[i] + 1]();
+    }
+    
+    // Get all of our right-hand-side tracknames and elements.
+    express.rhs_elems = new SI_Element *[nbrhs + 1]();
+    express.saa_rhs_elems = new SAA_Elem[nbrhs + 1]();
+    error = SAA_expressionGetElements(scene, elem, FALSE, nbrhs, rhstracknamelens, express.saa_rhs_elems, express.rhs_track_names);
+    assert(error == SI_SUCCESS);
+    delete[] rhstracknamelens;
+    
+    return error;
+}
+
+SI_Error Scene_SAA2SI(SI_Scene &scene) {
     SI_Error error = SI_SUCCESS;
     
     // First let's make sure to optimize the scene in any way we can.
@@ -625,111 +901,151 @@ SI_Error SI_GetScene(SAA_Scene *scene, SI_Scene &siscene) {
     int num_tex_processed = 0;
     int num_tex_merged = 0;
     int total_tex_mem = 0;
-    error = SAA_sceneOptimizeTexture2D(scene, &num_tex_processed, &num_tex_merged, &total_tex_mem);
+    error = SAA_sceneOptimizeTexture2D(scene.saa_scene, &num_tex_processed, &num_tex_merged, &total_tex_mem);
     assert(error == SI_SUCCESS);
     
     // Optimize all of our materials.
     int num_mats_merged = 0;
-    error = SAA_sceneOptimizeMaterials(scene, &num_mats_merged);
+    error = SAA_sceneOptimizeMaterials(scene.saa_scene, &num_mats_merged);
     assert(error == SI_SUCCESS);
     
     // Now we should get the scene specfic data.
     
     // Get the length of our scenes prefix.
     int prefixlength = -1;
-    error = SAA_sceneGetPrefixLength(scene, &prefixlength);
+    error = SAA_sceneGetPrefixLength(scene.saa_scene, &prefixlength);
     assert(error == SI_SUCCESS);
-    siscene.prefix_len = prefixlength;
+    scene.prefix_len = prefixlength;
     
     // Get the prefix of our scene.
-    siscene.prefix = new char[++prefixlength]();
-    error = SAA_sceneGetPrefix(scene, prefixlength, siscene.prefix);
+    scene.prefix = new char[++prefixlength]();
+    error = SAA_sceneGetPrefix(scene.saa_scene, prefixlength, scene.prefix);
     assert(error == SI_SUCCESS);
     
     // Get the length of our scenes name.
     int namelength = -1;
-    error = SAA_sceneGetNameLength(scene, &namelength);
+    error = SAA_sceneGetNameLength(scene.saa_scene, &namelength);
     assert(error == SI_SUCCESS);
-    siscene.name_len = namelength;
+    scene.name_len = namelength;
     
     // Get the name of our scene.
-    siscene.name = new char[++namelength]();
-    error = SAA_sceneGetName(scene, namelength, siscene.name);
+    scene.name = new char[++namelength]();
+    error = SAA_sceneGetName(scene.saa_scene, namelength, scene.name);
     assert(error == SI_SUCCESS);
     
     // Get the scaling type for the scene.
-    error = SAA_sceneGetScalingType(scene, &siscene.scaling);
+    error = SAA_sceneGetScalingType(scene.saa_scene, &scene.scaling);
     assert(error == SI_SUCCESS);
     
     // Finally get all of the elements in the scene itself.
     
     // Get the number of fcurves.
     int num_fcurves = -1;
-    error = SAA_sceneGetNbFcurves(scene, &num_fcurves);
+    error = SAA_sceneGetNbFcurves(scene.saa_scene, &num_fcurves);
     assert(error == SI_SUCCESS);
-    siscene.num_fcurves = num_fcurves;
+    scene.fcurves.resize(num_fcurves);
     
     // Get the fcurves in the scene.
     SAA_Elem *fcurves = new SAA_Elem[num_fcurves + 1];
-    siscene.fcurves = new SI_FCurve[num_fcurves + 1]();
-    error = SAA_sceneGetFcurves(scene, num_fcurves, fcurves);
+    error = SAA_sceneGetFcurves(scene.saa_scene, num_fcurves, fcurves);
     assert(error == SI_SUCCESS);
     for (uint32_t i = 0; i < num_fcurves; i++) {
         SAA_Elem *fcurve = &fcurves[i];
-        error = SI_GetFCurve(scene, fcurve, siscene.fcurves[i]);
+        error = FCurve_SAA2SI(scene.saa_scene, fcurve, scene.fcurves[i]);
     }
     delete[] fcurves;
     
     // Get the number of 2d textures in the scene.
     int num_textures2d = -1;
-    error = SAA_sceneGetNbTexture2D(scene, &num_textures2d);
+    error = SAA_sceneGetNbTexture2D(scene.saa_scene, &num_textures2d);
     assert(error == SI_SUCCESS && num_textures2d != -1);
-    siscene.num_textures2d = num_textures2d;
+    scene.textures2d.resize(num_textures2d);
     
     // Get the 2d textures in the scene.
     SAA_Elem *textures2d = new SAA_Elem[num_textures2d + 1];
-    siscene.textures2d = new SI_Texture2d[num_textures2d + 1]();
-    error = SAA_sceneGetTexture2D(scene, num_textures2d, textures2d);
+    error = SAA_sceneGetTexture2D(scene.saa_scene, num_textures2d, textures2d);
     assert(error == SI_SUCCESS);
     for (uint32_t i = 0; i < num_textures2d; i++) {
         SAA_Elem *texture2d = &textures2d[i];
-        error = SI_GetTexture2d(scene, texture2d, siscene.textures2d[i]);
+        error = Texture2d_SAA2SI(scene.saa_scene, texture2d, scene.textures2d[i]);
+        scene.textures2d[i].id = i;
     }
     delete[] textures2d;
     
     // Get the number of 3d textures in the scene.
     int num_textures3d = -1;
-    error = SAA_sceneGetNbTexture3D(scene, &num_textures3d);
+    error = SAA_sceneGetNbTexture3D(scene.saa_scene, &num_textures3d);
     assert(error == SI_SUCCESS && num_textures3d != -1);
-    siscene.num_textures3d = num_textures3d;
+    scene.textures3d.resize(num_textures3d);
     
     // Get the 3d textures in the scene.
     SAA_Elem *textures3d = new SAA_Elem[num_textures3d + 1];
-    siscene.textures3d = new SI_Texture3d[num_textures3d + 1]();
-    error = SAA_sceneGetTexture3D(scene, num_textures3d, textures3d);
+    error = SAA_sceneGetTexture3D(scene.saa_scene, num_textures3d, textures3d);
     assert(error == SI_SUCCESS);
     for (uint32_t i = 0; i < num_textures3d; i++) {
         SAA_Elem *texture3d = &textures3d[i];
-        error = SI_GetTexture3d(scene, texture3d, siscene.textures3d[i]);
+        error = Texture3d_SAA2SI(scene.saa_scene, texture3d, scene.textures3d[i]);
+        scene.texture3d[i].id = i;
     }
     delete[] textures3d;
     
     // Get the number of materials in the scene.
     int num_materials = -1;
-    error = SAA_sceneGetNbMaterials(scene, &num_materials);
+    error = SAA_sceneGetNbMaterials(scene.saa_scene, &num_materials);
     assert(error == SI_SUCCESS && num_materials != -1);
-    siscene.num_materials = num_materials;
+    scene.materials.resize(num_materials);
     
     // Get the materials in the scene.
     SAA_Elem *materials = new SAA_Elem[num_materials + 1];
-    siscene.materials = new SI_Material[num_materials + 1]();
-    error = SAA_sceneGetMaterials(scene, num_materials, materials);
+    error = SAA_sceneGetMaterials(scene.saa_scene, num_materials, materials);
     assert(error == SI_SUCCESS);
     for (uint32_t i = 0; i < num_materials; i++) {
         SAA_Elem *material = &materials[i];
-        error = SI_GetMaterial(scene, material, siscene.materials[i]);
+        error = Material_SAA2SI(scene.saa_scene, material, scene.materials[i]);
+        scene.materials[i].id = i;
     }
     delete[] materials;
+    
+    // Get the number of expressions in the scene.
+    int num_expressions = -1;
+    error = SAA_sceneGetNbExpressions(scene.saa_scene, &num_expressions);
+    assert(error == SI_SUCCESS && num_materials != -1);
+    scene.expressions.resize(num_expressions);
+    
+    // Get the expressions in the scene.
+    SAA_Elem *expressions = new SAA_Elem[num_expressions + 1];
+    error = SAA_sceneGetExpressions(scene.saa_scene, num_expressions, expressions);
+    assert(error == SI_SUCCESS);
+    for (uint32_t i = 0; i < num_expressions; i++) {
+        SAA_Elem *expression = &expressions[i];
+        error = Expression_SAA2SI(scene.saa_scene, expression, scene.expressions[i]);
+        scene.expressions[i].id = i;
+    }
+    delete[] expressions;
+    
+    // For some elements, They store references to SAA elements. We want to convert those to a corresponding 
+    // index in our converted elements.
+    
+    // Expressions
+    for (uint32_t i = 0; i < scene.expressions.size(); i++) {
+        SI_Expression &expression = scene.expressions[i];
+        
+        // Convert all of our LHS elements to a corresponding index.
+        for (uint32_t j = 0; j < expression.num_lhs_elems; j++) {
+            SAA_Elem *lhs_elem = &expression.saa_lhs_elems[j];
+            SI_HasSAAElement(scene, lhs_elem, &expression.lhs_elems[j]);
+        }
+        delete[] expression.saa_lhs_elems;
+        expression.saa_lhs_elems = NULL;
+        
+        // Convert all of our RHS elements to a corresponding index.
+        for (uint32_t j = 0; j < expression.num_lhs_elems; j++) {
+            SAA_Elem *rhs_elem = &expression.saa_rhs_elems[j];
+            SI_HasSAAElement(scene, rhs_elem, &expression.rhs_elems[j]);
+        }
+        delete[] expression.saa_rhs_elems;
+        expression.saa_rhs_elems = NULL;
+    }
     
     return error;
 }
@@ -851,34 +1167,96 @@ SI_Error SI_WriteFCurve(SI_FCurve &curv, BinaryFile *file) {
     return SI_SUCCESS;
 }
 
-SI_Error SI_WriteScene(SI_Scene &siscene, BinaryFile *file) {
+SI_Error SI_WriteExpression(SI_Expression &expression, BinaryFile *file) {
+    SI_Error error = SI_WriteElement(expression, file);
+    if (error != SI_SUCCESS) { return error; }
+    
+    file->write(expression.num_vars);
+    file->write(expression.num_lhs_elems);
+    file->write(expression.num_rhs_elems);
+    file->write(expression.active);
+    
+    file->write(expression.expr_str_len);
+    file->write(expression.expr_str);
+    file->write(expression.target_str_len);
+    file->write(expression.target_str);
+    
+    // Write all of the variable names.
+    for (uint32_t i = 0; i < expression.num_vars; i++) {
+        file->write(expression.variable_name_lens[i]);
+        file->write(expression.variable_names[i]);
+    };
+    
+    // Write all of the variable strings.
+    for (uint32_t i = 0; i < expression.num_vars; i++) {
+        file->write(expression.variable_str_lens[i]);
+        file->write(expression.variable_strs[i]);
+    };
+    
+    // Write all of the left-hand-side information.
+    for (uint32_t i = 0; i < expression.num_lhs_elems; i++) {
+        SI_Element *elem = expression.lhs_elems[i];
+        if (elem == NULL) {
+            file->write((int32_t)-1);
+            file->write((uint32_t)0);
+        } else {
+            file->write((int32_t)elem->chapter);
+            file->write(elem->id);
+        }
+        file->write(expression.lhs_track_name_lens[i]);
+        file->write(expression.lhs_track_names[i]);
+    };
+    
+    // Write all of the right-hand-side information.
+    for (uint32_t i = 0; i < expression.num_rhs_elems; i++) {
+        SI_Element *elem = expression.rhs_elems[i];
+        if (elem == NULL) {
+            file->write((int32_t)-1);
+            file->write((uint32_t)0);
+        } else {
+            file->write((int32_t)elem->chapter);
+            file->write(elem->id);
+        }
+        file->write(expression.rhs_track_name_lens[i]);
+        file->write(expression.rhs_track_names[i]);
+    };
+    
+    // Success!
+    return SI_SUCCESS;
+} 
+
+SI_Error SI_WriteScene(SI_Scene &scene, BinaryFile *file) {
     if (file == nullptr) { return SI_ERR_BAD_ARGUMENT; }
     
-    file->write(siscene.prefix_len);
-    file->write(siscene.prefix);
-    file->write(siscene.name_len);
-    file->write(siscene.name);
-    file->write(siscene.num_elements);
-    file->write(siscene.num_textures2d);
-    file->write(siscene.num_textures3d);
-    file->write(siscene.num_materials);
-    file->write(siscene.num_fcurves);
-    file->write(siscene.num_constraints);
-    file->write(siscene.scaling);
+    file->write(scene.prefix_len);
+    file->write(scene.prefix);
+    file->write(scene.name_len);
+    file->write(scene.name);
+    file->write(scene.textures2d.size());
+    file->write(scene.textures3d.size());
+    file->write(scene.materials.size());
+    file->write(scene.fcurves.size());
+    file->write(scene.constraints.size());
+    file->write(scene.scaling);
     
-    for (uint32_t i = 0; i < siscene.num_textures2d; i++) {
-        SI_Texture2d &tex = siscene.textures2d[i];
+    for (uint32_t i = 0; i < scene.textures2d.size(); i++) {
+        SI_Texture2d &tex = scene.textures2d[i];
         SI_WriteTexture2d(tex, file);
     }
     
-    for (uint32_t i = 0; i < siscene.num_textures3d; i++) {
-        SI_Texture3d &tex = siscene.textures3d[i];
+    for (uint32_t i = 0; i < scene.textures3d.size(); i++) {
+        SI_Texture3d &tex = scene.textures3d[i];
         SI_WriteTexture3d(tex, file);
     }
     
-    for (uint32_t i = 0; i < siscene.num_fcurves; i++) {
-        SI_FCurve &fcurve = siscene.fcurves[i];
+    for (uint32_t i = 0; i < scene.fcurves.size(); i++) {
+        SI_FCurve &fcurve = scene.fcurves[i];
         SI_WriteFCurve(fcurve, file);
+    }
+    
+    for (uint32_t i = 0; i < scene.expressions.size(); i++) {
+        SI_Expression &expression = scene.expressions[i];
+        SI_WriteExpression(expression, file);
     }
     
     // Success!

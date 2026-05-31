@@ -5,6 +5,8 @@ Makefile
 *.vcxproj.user
 .vs
 *.log
+*.sublime-project
+*.sublime-workspace
 x64
 Win32
 Debug

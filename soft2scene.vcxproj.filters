@@ -56,5 +56,8 @@
     <ClInclude Include="Softimage\SI_utils.h">
       <Filter>Header Files\Softimage</Filter>
     </ClInclude>
+    <ClInclude Include="dynArray.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

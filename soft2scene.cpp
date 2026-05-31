@@ -91,7 +91,8 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
     }
     
     // Convert the scene into our new format.
-    error = SI_GetScene(scene, siscene);
+    siscene.saa_scene = scene;
+    error = Scene_SAA2SI(siscene);
     if (error != SI_ERR_NONE) {
         fprintf(log_file, "Failed to convert scene %s with error: %d\n", scene_name, error);
         safe_exit(1);
@@ -101,37 +102,37 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
     
     fprintf(log_file, "DEBUG: Scene prefix: %s\n", siscene.prefix);
     fprintf(log_file, "DEBUG: Scene name: %s\n", siscene.name);
-    fprintf(log_file, "DEBUG: Scene element count: %d\n", siscene.num_elements);
-    fprintf(log_file, "DEBUG: Scene texture2d count: %d\n", siscene.num_textures2d);
-    fprintf(log_file, "DEBUG: Scene texture3d count: %d\n", siscene.num_textures3d);
-    fprintf(log_file, "DEBUG: Scene material count: %d\n", siscene.num_materials);
-    fprintf(log_file, "DEBUG: Scene fcurve count: %d\n", siscene.num_fcurves);
-    fprintf(log_file, "DEBUG: Scene constraint count: %d\n", siscene.num_constraints);
+    fprintf(log_file, "DEBUG: Scene texture2d count: %d\n", siscene.textures2d.size());
+    fprintf(log_file, "DEBUG: Scene texture3d count: %d\n", siscene.textures3d.size());
+    fprintf(log_file, "DEBUG: Scene material count: %d\n", siscene.materials.size());
+    fprintf(log_file, "DEBUG: Scene model count: %d\n", siscene.models.size());
+    fprintf(log_file, "DEBUG: Scene fcurve count: %d\n", siscene.fcurves.size());
+    fprintf(log_file, "DEBUG: Scene constraint count: %d\n", siscene.constraints.size());
     fprintf(log_file, "DEBUG: Scene scaling type: %d\n", siscene.scaling);
     
     fprintf(log_file, "====TEXTURE2D====\n");
-    for (uint32_t i = 0; i < siscene.num_textures2d; i++) {
+    for (uint32_t i = 0; i < siscene.textures2d.size(); i++) {
         SI_Texture2d &tex = siscene.textures2d[i];
-        fprintf(log_file, "DEBUG [TEXTURE2D]: %d, %d, %d, %s.%s, %s\n", tex.id, tex.chapter, tex.revision, tex.prefix, tex.name, tex.filepath);
+        fprintf(log_file, "DEBUG [TEXTURE2D]: %d, %d, %d, %s.%s, %s\n", i, tex.chapter, tex.revision, tex.prefix, tex.name, tex.filepath);
     }
     
     fprintf(log_file, "====TEXTURE3D====\n");
-    for (uint32_t i = 0; i < siscene.num_textures3d; i++) {
+    for (uint32_t i = 0; i < siscene.textures3d.size(); i++) {
         SI_Texture3d &tex = siscene.textures3d[i];
-        fprintf(log_file, "DEBUG [TEXTURE3D]: %d, %d, %d, %s.%s\n", tex.id, tex.chapter, tex.revision, tex.prefix, tex.name);
+        fprintf(log_file, "DEBUG [TEXTURE3D]: %d, %d, %d, %s.%s\n", i, tex.chapter, tex.revision, tex.prefix, tex.name);
     }
     
     fprintf(log_file, "====MATERIAL====\n");
-    for (uint32_t i = 0; i < siscene.num_materials; i++) {
+    for (uint32_t i = 0; i < siscene.materials.size(); i++) {
         SI_Material &mat = siscene.materials[i];
-        fprintf(log_file, "DEBUG [MATERIAL]: %d, %d, %d, %s.%s, %d, %d, %d, %d\n", mat.id, mat.chapter, mat.revision, mat.prefix, mat.name, 
+        fprintf(log_file, "DEBUG [MATERIAL]: %d, %d, %d, %s.%s, %d, %d, %d, %d\n", i, mat.chapter, mat.revision, mat.prefix, mat.name, 
                 mat.num_active_tex2d, mat.num_passive_tex2d, mat.num_active_tex3d, mat.num_passive_tex3d);
     }
     
     fprintf(log_file, "====FCURVES====\n");
-    for (uint32_t i = 0; i < siscene.num_fcurves; i++) {
+    for (uint32_t i = 0; i < siscene.fcurves.size(); i++) {
         SI_FCurve &fcurve = siscene.fcurves[i];
-        fprintf(log_file, "DEBUG [FCURVE]: %d, %d, %d, %s.%s, %s\n", fcurve.id, fcurve.chapter, fcurve.revision, fcurve.prefix, fcurve.name, fcurve.trackname);
+        fprintf(log_file, "DEBUG [FCURVE]: %d, %d, %d, %s.%s, %s\n", i, fcurve.chapter, fcurve.revision, fcurve.prefix, fcurve.name, fcurve.trackname);
     }
     
     // Open our binary file for writing.
@@ -146,7 +147,7 @@ int ProcessScene(SAA_Database *database, SAA_Scene *scene, const char *scene_nam
     file.write("SISCENE");
     SI_WriteScene(siscene, &file);
     
-    file.compress_file();
+    //file.compress_file();
 
     return 0;
 }

@@ -167,6 +167,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="binaryFile.h" />
+    <ClInclude Include="dynArray.h" />
     <ClInclude Include="Softimage\SI_interface.h" />
     <ClInclude Include="Softimage\SI_types.h" />
     <ClInclude Include="Softimage\SI_utils.h" />

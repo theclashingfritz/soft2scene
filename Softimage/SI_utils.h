@@ -39,4 +39,7 @@ int32_t SI_CompareElements(SI_Element &a, SI_Element &b);
  */
 int32_t SI_CompareElements(SAA_Scene *scene, SAA_Elem *elem, SI_Element &b);
 
+
+int32_t SI_HasSAAElement(SI_Scene &scene, SAA_Elem *saa_elem, SI_Element **elem);
+
 #endif // SI_UTILS
